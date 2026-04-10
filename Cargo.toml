@@ -1,0 +1,9 @@
+[package]
+name = "more-effective-logger"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ssh2 = "0.9"
+eframe = "0.29"
+egui = "0.29"
