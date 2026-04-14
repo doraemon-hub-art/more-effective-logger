@@ -22,7 +22,19 @@ pub fn parse_log_line(line: &str) -> Option<LogEntry> {
             message: caps.get(4)?.as_str().to_string(),
         })
     } else {
-        None
+        // 如果正则不匹配，尝试更宽松的解析
+        // 至少提取第一个字符作为level，其余作为message
+        if !line.is_empty() {
+            let level = line.chars().next().unwrap_or('?').to_string();
+            Some(LogEntry {
+                level,
+                timestamp: String::new(),
+                file_line: String::new(),
+                message: line.to_string(),
+            })
+        } else {
+            None
+        }
     }
 }
 

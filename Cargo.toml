@@ -5,9 +5,11 @@ edition = "2021"
 
 [dependencies]
 ssh2 = "0.9"
-eframe = "0.29"
-egui = "0.29"
+iced = { version = "0.13", features = ["debug"] }
 regex = "1"
 toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 dirs = "5.0"
+tokio = { version = "1", features = ["full"] }
+crossbeam-channel = "0.5.15"
+futures = "0.3"
