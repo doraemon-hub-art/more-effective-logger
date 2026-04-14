@@ -151,4 +151,46 @@ impl SshClient {
 
         self.execute_command(command, tx)
     }
+
+    pub fn execute_shell_command(
+        &self,
+        rx: mpsc::Receiver<String>,
+        tx: mpsc::Sender<String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // 等待接收命令
+        while let Ok(cmd) = rx.recv() {
+            if cmd.is_empty() {
+                continue;
+            }
+
+            // 建立 TCP 连接
+            let tcp = TcpStream::connect(&self.config.host)?;
+            tcp.set_read_timeout(Some(Duration::from_secs(30)))?;
+
+            // 创建 SSH Session 并握手
+            let mut session = Session::new()?;
+            session.set_tcp_stream(tcp);
+            session.handshake()?;
+
+            // 认证
+            session.userauth_password(&self.config.username, &self.config.password)?;
+
+            // 执行命令
+            let mut channel = session.channel_session()?;
+            channel.exec(&cmd)?;
+
+            // 读取输出
+            let reader = BufReader::new(channel.stream(0));
+            for line in reader.lines() {
+                if let Ok(text) = line {
+                    tx.send(text).ok();
+                }
+            }
+
+            // 等待命令完成
+            channel.wait_close().ok();
+        }
+
+        Ok(())
+    }
 }

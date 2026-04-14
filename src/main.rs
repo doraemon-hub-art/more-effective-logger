@@ -1,6 +1,8 @@
 mod ssh;
 mod ui;
 mod parser;
+mod filter;
+mod config;
 
 use eframe::egui;
 use std::sync::mpsc;
