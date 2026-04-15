@@ -7,7 +7,7 @@ pub struct FilterRule {
     pub value: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FilterField {
     Level,
     Timestamp,
@@ -15,34 +15,12 @@ pub enum FilterField {
     Message,
 }
 
-impl std::fmt::Display for FilterField {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FilterField::Level => write!(f, "Level"),
-            FilterField::Timestamp => write!(f, "Timestamp"),
-            FilterField::FileLine => write!(f, "FileLine"),
-            FilterField::Message => write!(f, "Message"),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FilterOperator {
     Contains,
     NotContains,
     Equals,
     NotEquals,
-}
-
-impl std::fmt::Display for FilterOperator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FilterOperator::Contains => write!(f, "Contains"),
-            FilterOperator::NotContains => write!(f, "NotContains"),
-            FilterOperator::Equals => write!(f, "Equals"),
-            FilterOperator::NotEquals => write!(f, "NotEquals"),
-        }
-    }
 }
 
 impl FilterRule {

@@ -2,7 +2,7 @@ use ssh2::Session;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::net::TcpStream;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -50,7 +50,7 @@ impl SshClient {
     pub fn execute_command(
         &self,
         command: Box<dyn SshCommand>,
-        tx: Sender<String>,
+        tx: mpsc::Sender<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let is_connected = Arc::clone(&self.is_connected);
 
@@ -87,7 +87,7 @@ impl SshClient {
     fn connect_and_execute(
         &self,
         command: &Box<dyn SshCommand>,
-        tx: &Sender<String>,
+        tx: &mpsc::Sender<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // 1. 建立 TCP 连接
         println!("Connecting to {}...", self.config.host);
@@ -138,8 +138,8 @@ impl SshClient {
 
     pub fn tail_logs(
         &self,
-        rx: Receiver<String>,
-        tx: Sender<String>,
+        rx: mpsc::Receiver<String>,
+        tx: mpsc::Sender<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // 等待接收文件路径
         let log_file = rx.recv()?;
@@ -154,8 +154,8 @@ impl SshClient {
 
     pub fn execute_shell_command(
         &self,
-        rx: Receiver<String>,
-        tx: Sender<String>,
+        rx: mpsc::Receiver<String>,
+        tx: mpsc::Sender<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // 等待接收命令
         while let Ok(cmd) = rx.recv() {
@@ -183,8 +183,7 @@ impl SshClient {
             let reader = BufReader::new(channel.stream(0));
             for line in reader.lines() {
                 if let Ok(text) = line {
-                    // 为 Terminal 输出添加标记
-                    tx.send(format!("[TERMINAL]{}", text)).ok();
+                    tx.send(text).ok();
                 }
             }
 
