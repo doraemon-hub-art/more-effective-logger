@@ -1,0 +1,260 @@
+import { Button, LineEdit, ListView, HorizontalBox, VerticalBox, GroupBox, ComboBox } from "std-widgets.slint";
+
+struct LogEntry {
+    level: string,
+    timestamp: string,
+    file_line: string,
+    message: string,
+}
+
+struct FilterRule {
+    field: string,
+    operator: string,
+    value: string,
+}
+
+export component AppWindow inherits Window {
+    title: "More Effective Logger";
+    width: 1024px;
+    height: 768px;
+
+    // Callbacks
+    callback connect-session(string, string, string);
+    callback start-tail(string);
+    callback stop-tail();
+    callback clear-logs();
+    callback execute-command(string);
+    callback add-filter(string, string, string);
+    callback remove-filter(int);
+
+    // Properties
+    in-out property <string> file-path: "/tmp/running.INFO";
+    in-out property <bool> is-connected: false;
+    in-out property <[LogEntry]> log-entries: [];
+    in-out property <[FilterRule]> filter-rules: [];
+    in-out property <[string]> terminal-output: [];
+    in-out property <string> ssh-host: "192.168.1.98:22";
+    in-out property <string> ssh-username: "root";
+    in-out property <string> ssh-password: "";
+    in-out property <string> session-status: "Disconnected";
+    in-out property <int> current-page: 0;
+
+    HorizontalBox {
+        padding: 0px;
+        spacing: 0px;
+
+        // 左侧导航
+        Rectangle {
+            width: 150px;
+            background: #1e1e2e;
+
+            VerticalBox {
+                padding: 10px;
+                spacing: 5px;
+                alignment: start;
+
+                Text { text: "Menu"; font-size: 16px; color: white; }
+
+                Rectangle { height: 1px; background: #444; }
+
+                Button {
+                    text: "Logs";
+                    clicked => { current-page = 0; }
+                }
+                Button {
+                    text: "Session";
+                    clicked => { current-page = 1; }
+                }
+                Button {
+                    text: "Settings";
+                    clicked => { current-page = 2; }
+                }
+                Button {
+                    text: "Terminal";
+                    clicked => { current-page = 3; }
+                }
+            }
+        }
+
+        // 主内容区
+        Rectangle {
+            background: #181825;
+
+            // Logs 页面
+            if current-page == 0: VerticalBox {
+                padding: 10px;
+                spacing: 5px;
+
+                // 顶部工具栏
+                HorizontalBox {
+                    spacing: 5px;
+                    height: 35px;
+
+                    Text { text: "File Path:"; color: white; vertical-alignment: center; }
+                    LineEdit {
+                        text <=> file-path;
+                        placeholder-text: "/tmp/running.INFO";
+                    }
+                    Button {
+                        text: "OK";
+                        clicked => { start-tail(file-path); }
+                    }
+                    Button {
+                        text: "Clear";
+                        clicked => { clear-logs(); }
+                    }
+                    Button {
+                        text: is-connected ? "Stop" : "Start";
+                        clicked => {
+                            if is-connected {
+                                stop-tail();
+                            } else {
+                                start-tail(file-path);
+                            }
+                        }
+                    }
+                    Text {
+                        text: is-connected ? "Connected" : "";
+                        color: #50fa7b;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // 过滤器
+                HorizontalBox {
+                    spacing: 5px;
+                    height: 35px;
+
+                    Text { text: "Filter:"; color: white; vertical-alignment: center; }
+
+                    filter-field := ComboBox {
+                        model: ["Message", "Level", "FileLine", "Timestamp"];
+                        current-value: "Message";
+                    }
+                    filter-op := ComboBox {
+                        model: ["Contains", "NotContains", "Equals", "NotEquals"];
+                        current-value: "Contains";
+                    }
+                    filter-value := LineEdit {
+                        placeholder-text: "Filter value...";
+                    }
+                    Button {
+                        text: "Add";
+                        clicked => {
+                            add-filter(filter-field.current-value, filter-op.current-value, filter-value.text);
+                            filter-value.text = "";
+                        }
+                    }
+                }
+
+                // 日志表格
+                Rectangle {
+                    background: #1e1e2e;
+                    border-radius: 4px;
+
+                    VerticalBox {
+                        padding: 5px;
+                        spacing: 0px;
+
+                        // 表头
+                        HorizontalBox {
+                            height: 25px;
+                            padding: 5px;
+                            spacing: 10px;
+
+                            Text { text: "Level"; color: #cdd6f4; font-weight: 700; width: 40px; }
+                            Text { text: "Timestamp"; color: #cdd6f4; font-weight: 700; width: 180px; }
+                            Text { text: "File:Line"; color: #cdd6f4; font-weight: 700; width: 160px; }
+                            Text { text: "Message"; color: #cdd6f4; font-weight: 700; }
+                        }
+
+                        Rectangle { height: 1px; background: #444; }
+
+                        // 日志列表
+                        ListView {
+                            for entry in log-entries: HorizontalBox {
+                                height: 22px;
+                                padding: 5px;
+                                spacing: 10px;
+
+                                Text { text: entry.level; color: #a6e3a1; width: 40px; font-size: 12px; }
+                                Text { text: entry.timestamp; color: #cdd6f4; width: 180px; font-size: 12px; }
+                                Text { text: entry.file_line; color: #89b4fa; width: 160px; font-size: 12px; }
+                                Text { text: entry.message; color: #cdd6f4; font-size: 12px; }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Session 页面
+            if current-page == 1: VerticalBox {
+                padding: 20px;
+                spacing: 10px;
+                alignment: start;
+
+                Text { text: "Session Settings"; font-size: 18px; color: white; }
+
+                HorizontalBox {
+                    spacing: 10px;
+                    height: 35px;
+                    Text { text: "Host:"; color: white; width: 80px; vertical-alignment: center; }
+                    LineEdit { text <=> ssh-host; }
+                }
+                HorizontalBox {
+                    spacing: 10px;
+                    height: 35px;
+                    Text { text: "Username:"; color: white; width: 80px; vertical-alignment: center; }
+                    LineEdit { text <=> ssh-username; }
+                }
+                HorizontalBox {
+                    spacing: 10px;
+                    height: 35px;
+                    Text { text: "Password:"; color: white; width: 80px; vertical-alignment: center; }
+                    LineEdit { text <=> ssh-password; input-type: password; }
+                }
+
+                Button {
+                    text: "Connect";
+                    clicked => { connect-session(ssh-host, ssh-username, ssh-password); }
+                }
+
+                Text { text: session-status; color: #50fa7b; }
+            }
+
+            // Settings 页面
+            if current-page == 2: VerticalBox {
+                padding: 20px;
+                spacing: 10px;
+                alignment: start;
+
+                Text { text: "Settings"; font-size: 18px; color: white; }
+                Text { text: "Font settings coming soon..."; color: #888; }
+            }
+
+            // Terminal 页面
+            if current-page == 3: VerticalBox {
+                padding: 10px;
+                spacing: 5px;
+
+                Text { text: "Terminal"; font-size: 18px; color: white; }
+
+                ListView {
+                    for line in terminal-output: Text {
+                        text: line;
+                        color: #cdd6f4;
+                        font-size: 12px;
+                    }
+                }
+
+                terminal-input := LineEdit {
+                    placeholder-text: "Enter command and press Enter...";
+                    accepted(text) => {
+                        execute-command(text);
+                        self.text = "";
+                    }
+                }
+            }
+        }
+    }
+}
