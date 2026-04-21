@@ -172,19 +172,47 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // 回调：添加过滤器
     let filters_for_add = filters.clone();
+    let ui_handle_for_add = ui.as_weak();
     ui.on_add_filter(move |field, operator, value| {
         if let Some(rule) = filter::FilterRule::from_ui(&field, &operator, &value) {
             if let Ok(mut manager) = filters_for_add.lock() {
-                manager.add_rule(rule);
+                manager.add_rule(rule.clone());
+                
+                // 更新 UI 中的过滤规则列表
+                if let Some(ui) = ui_handle_for_add.upgrade() {
+                    let mut rules = vec![];
+                    for r in &manager.rules {
+                        rules.push(FilterRule {
+                            field: format!("{:?}", r.field).into(),
+                            operator: format!("{:?}{:?}", r.action, r.mode).into(),
+                            value: r.terms.join(", ").into(),
+                        });
+                    }
+                    ui.set_filter_rules((&rules[..]).into());
+                }
             }
         }
     });
 
     let filters_for_remove = filters.clone();
+    let ui_handle_for_remove = ui.as_weak();
     ui.on_remove_filter(move |index| {
         if index >= 0 {
             if let Ok(mut manager) = filters_for_remove.lock() {
                 manager.remove_rule(index as usize);
+                
+                // 更新 UI 中的过滤规则列表
+                if let Some(ui) = ui_handle_for_remove.upgrade() {
+                    let mut rules = vec![];
+                    for r in &manager.rules {
+                        rules.push(FilterRule {
+                            field: format!("{:?}", r.field).into(),
+                            operator: format!("{:?}{:?}", r.action, r.mode).into(),
+                            value: r.terms.join(", ").into(),
+                        });
+                    }
+                    ui.set_filter_rules((&rules[..]).into());
+                }
             }
         }
     });

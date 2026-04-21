@@ -177,11 +177,44 @@ export component AppWindow inherits Window {
                     }
                 }
 
+                // 已添加的过滤规则
+                Rectangle {
+                    height: 100px;
+                    background: #1e1e2e;
+                    border-radius: 4px;
+
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 5px;
+
+                        Text { text: "Active Filters:"; color: white; font-size: root.body-font-size; }
+
+                        ListView {
+                            height: 70px;
+                            for rule[index] in filter-rules: HorizontalBox {
+                                spacing: 10px;
+                                height: 25px;
+                                padding: 2px;
+
+                                Text { text: rule.field; color: #89b4fa; font-size: root.body-font-size; width: 80px; }
+                                Text { text: rule.operator; color: #f5c2e7; font-size: root.body-font-size; width: 150px; }
+                                Text { text: rule.value; color: #a6e3a1; font-size: root.body-font-size; width: 200px; }
+                                Button {
+                                    text: "Remove";
+                                    width: 60px;
+                                    height: 20px;
+                                    clicked => { remove-filter(index); }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // 日志表格
                 Rectangle {
                     background: #1e1e2e;
                     border-radius: 4px;
-                    height: parent.height - 90px;
+                    height: parent.height - 140px;
 
                     VerticalBox {
                         padding: 5px;
