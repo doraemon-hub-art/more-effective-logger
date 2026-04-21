@@ -1,10 +1,12 @@
 use crate::parser::LogEntry;
+use regex::Regex;
 
 #[derive(Clone, Debug)]
 pub struct FilterRule {
     pub field: FilterField,
-    pub operator: FilterOperator,
-    pub value: String,
+    pub mode: FilterMode,
+    pub action: FilterAction,
+    pub terms: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -16,11 +18,15 @@ pub enum FilterField {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum FilterOperator {
+pub enum FilterMode {
     Contains,
-    NotContains,
-    Equals,
-    NotEquals,
+    Regex,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FilterAction {
+    Include,
+    Exclude,
 }
 
 impl FilterRule {
@@ -32,12 +38,50 @@ impl FilterRule {
             FilterField::Message => &entry.message,
         };
 
-        match self.operator {
-            FilterOperator::Contains => field_value.contains(&self.value),
-            FilterOperator::NotContains => !field_value.contains(&self.value),
-            FilterOperator::Equals => field_value == &self.value,
-            FilterOperator::NotEquals => field_value != &self.value,
+        if self.terms.is_empty() {
+            return true;
         }
+
+        self.terms.iter().all(|term| match self.mode {
+            FilterMode::Contains => field_value.contains(term),
+            FilterMode::Regex => Regex::new(term)
+                .map(|re| re.is_match(field_value))
+                .unwrap_or(false),
+        })
+    }
+
+    pub fn from_ui(field: &str, operator: &str, value: &str) -> Option<Self> {
+        let field = match field {
+            "Level" => FilterField::Level,
+            "Timestamp" => FilterField::Timestamp,
+            "FileLine" => FilterField::FileLine,
+            "Message" => FilterField::Message,
+            _ => return None,
+        };
+
+        let (action, mode) = match operator {
+            "IncludeContains" => (FilterAction::Include, FilterMode::Contains),
+            "ExcludeContains" => (FilterAction::Exclude, FilterMode::Contains),
+            "IncludeRegex" => (FilterAction::Include, FilterMode::Regex),
+            "ExcludeRegex" => (FilterAction::Exclude, FilterMode::Regex),
+            _ => return None,
+        };
+
+        let terms: Vec<String> = std::iter::once(value.trim())
+            .filter(|v| !v.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+
+        if terms.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            field,
+            mode,
+            action,
+            terms,
+        })
     }
 }
 
@@ -64,7 +108,16 @@ impl FilterManager {
         if self.rules.is_empty() {
             return true;
         }
-        // 任意一条规则匹配即可（OR 逻辑）
-        self.rules.iter().any(|rule| rule.matches(entry))
+
+        for rule in &self.rules {
+            let matched = rule.matches(entry);
+            match rule.action {
+                FilterAction::Include if !matched => return false,
+                FilterAction::Exclude if matched => return false,
+                _ => {}
+            }
+        }
+
+        true
     }
 }

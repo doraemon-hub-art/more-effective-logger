@@ -1,17 +1,11 @@
+use crate::session::Session;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionConfig {
-    pub host: String,
-    pub username: String,
-    pub password: String,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-    pub session: Option<SessionConfig>,
+    pub session: Option<Session>,
 }
 
 impl Default for Config {
@@ -67,12 +61,12 @@ impl Config {
         Ok(())
     }
 
-    pub fn save_session(&mut self, session: SessionConfig) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_session(&mut self, session: Session) -> Result<(), Box<dyn std::error::Error>> {
         self.session = Some(session);
         self.save()
     }
 
-    pub fn get_session(&self) -> Option<&SessionConfig> {
+    pub fn get_session(&self) -> Option<&Session> {
         self.session.as_ref()
     }
 }

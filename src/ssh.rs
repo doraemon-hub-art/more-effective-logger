@@ -6,11 +6,22 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use crate::session::Session as AppSession;
 
 pub struct SshConfig {
     pub host: String,
     pub username: String,
     pub password: String,
+}
+
+impl From<&AppSession> for SshConfig {
+    fn from(session: &AppSession) -> Self {
+        Self {
+            host: session.host.clone(),
+            username: session.username.clone(),
+            password: session.password.clone(),
+        }
+    }
 }
 
 pub trait SshCommand: Send {
@@ -40,6 +51,18 @@ pub struct SshClient {
 }
 
 impl SshClient {
+    fn open_session(&self) -> Result<Session, Box<dyn std::error::Error>> {
+        let tcp = TcpStream::connect(&self.config.host)?;
+        tcp.set_read_timeout(Some(Duration::from_secs(30)))?;
+
+        let mut session = Session::new()?;
+        session.set_tcp_stream(tcp);
+        session.handshake()?;
+        session.userauth_password(&self.config.username, &self.config.password)?;
+
+        Ok(session)
+    }
+
     pub fn new(config: SshConfig) -> Self {
         Self {
             config,
@@ -89,36 +112,21 @@ impl SshClient {
         command: &Box<dyn SshCommand>,
         tx: &mpsc::Sender<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // 1. 建立 TCP 连接
         println!("Connecting to {}...", self.config.host);
-        let tcp = TcpStream::connect(&self.config.host)?;
-        tcp.set_read_timeout(Some(Duration::from_secs(30)))?;
+        // 1. 创建 SSH Session 并认证
+        let mut session = self.open_session()?;
 
-        // 2. 创建 SSH Session 并握手
-        let mut session = Session::new()?;
-        session.set_tcp_stream(tcp);
-        session.handshake()?;
-
-        // 3. 认证
+        // 2. 认证状态打印
         println!("Authenticating as {}...", self.config.username);
-        match session.userauth_password(&self.config.username, &self.config.password) {
-            Ok(_) => {
-                println!("Authentication successful!");
-            }
-            Err(e) => {
-                eprintln!("Authentication failed: {}", e);
-                *self.is_connected.lock().unwrap() = false;
-                return Err(Box::new(e));
-            }
-        }
+        println!("Authentication successful!");
 
         *self.is_connected.lock().unwrap() = true;
         println!("SSH connected successfully!");
 
-        // 4. 执行命令
+        // 3. 执行命令
         let output = command.execute(&mut session)?;
 
-        // 5. 逐行读取并通过 channel 发送给 UI
+        // 4. 逐行读取并通过 channel 发送给 UI
         let reader = BufReader::new(output);
         for line in reader.lines() {
             match line {
@@ -150,6 +158,46 @@ impl SshClient {
         });
 
         self.execute_command(command, tx)
+    }
+
+    pub fn tail_file(
+        &self,
+        file_path: String,
+        tx: mpsc::Sender<String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let command = Box::new(TailFileCommand { file_path });
+        self.execute_command(command, tx)
+    }
+
+    pub fn file_exists(&self, file_path: &str) -> Result<bool, Box<dyn std::error::Error>> {
+        let session = self.open_session()?;
+        let mut channel = session.channel_session()?;
+        channel.exec(&format!("test -f '{}' && echo __MELOGGER_EXISTS__", file_path.replace('\'', "'\\''")))?;
+
+        let mut output = String::new();
+        std::io::Read::read_to_string(&mut channel.stream(0), &mut output)?;
+        channel.wait_close().ok();
+
+        Ok(output.contains("__MELOGGER_EXISTS__"))
+    }
+
+    pub fn execute_single_command(
+        &self,
+        cmd: &str,
+        tx: mpsc::Sender<String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let session = self.open_session()?;
+        let mut channel = session.channel_session()?;
+        channel.exec(cmd)?;
+
+        let reader = BufReader::new(channel.stream(0));
+        for line in reader.lines() {
+            if let Ok(text) = line {
+                tx.send(text).ok();
+            }
+        }
+        channel.wait_close().ok();
+        Ok(())
     }
 
     pub fn execute_shell_command(
