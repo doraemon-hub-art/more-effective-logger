@@ -1,3 +1,6 @@
+#[cfg(not(target_arch = "wasm32"))]
+mod terminal;
+
 mod ssh;
 mod parser;
 mod filter;
@@ -214,6 +217,14 @@ fn main() -> Result<(), slint::PlatformError> {
                     ui.set_filter_rules((&rules[..]).into());
                 }
             }
+        }
+    });
+
+    // 回调：打开独立终端窗口（需要完整的 GTK 环境）
+    let ui_handle = ui.as_weak();
+    ui.on_open_terminal_window(move || {
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_session_status("Terminal window requires GTK environment".into());
         }
     });
 

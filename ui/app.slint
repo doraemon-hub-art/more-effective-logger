@@ -15,8 +15,10 @@ struct FilterRule {
 
 export component AppWindow inherits Window {
     title: "More Effective Logger";
-    width: 1024px;
-    height: 768px;
+    preferred-width: 1024px;
+    preferred-height: 768px;
+    min-width: 800px;
+    min-height: 600px;
     default-font-size: 13px;
 
     // Callbacks
@@ -27,6 +29,7 @@ export component AppWindow inherits Window {
     callback execute-command(string);
     callback add-filter(string, string, string);
     callback remove-filter(int);
+    callback open-terminal-window();
 
     // Properties
     in-out property <string> file-path: "/tmp/running.INFO";
@@ -113,7 +116,7 @@ export component AppWindow inherits Window {
                 // 顶部工具栏
                 HorizontalBox {
                     spacing: 5px;
-                    height: 35px;
+                    height: 25px * font-scale + 10px;
 
                     Text { text: "File Path:"; color: white; vertical-alignment: center; }
                     LineEdit {
@@ -152,7 +155,7 @@ export component AppWindow inherits Window {
                 // 过滤器
                 HorizontalBox {
                     spacing: 5px;
-                    height: 35px;
+                    height: 25px * font-scale + 10px;
 
                     Text { text: "Filter:"; color: white; vertical-alignment: center; }
 
@@ -179,7 +182,7 @@ export component AppWindow inherits Window {
 
                 // 已添加的过滤规则
                 Rectangle {
-                    height: 100px;
+                    height: 70px * font-scale + 30px;
                     background: #1e1e2e;
                     border-radius: 4px;
 
@@ -190,10 +193,10 @@ export component AppWindow inherits Window {
                         Text { text: "Active Filters:"; color: white; font-size: root.body-font-size; }
 
                         ListView {
-                            height: 70px;
+                            height: 50px * font-scale;
                             for rule[index] in filter-rules: HorizontalBox {
                                 spacing: 10px;
-                                height: 25px;
+                                height: 18px * font-scale + 7px;
                                 padding: 2px;
 
                                 Text { text: rule.field; color: #89b4fa; font-size: root.body-font-size; width: 80px; }
@@ -214,7 +217,7 @@ export component AppWindow inherits Window {
                 Rectangle {
                     background: #1e1e2e;
                     border-radius: 4px;
-                    height: parent.height - 140px;
+                    height: parent.height - (100px * font-scale + 40px);
 
                     VerticalBox {
                         padding: 5px;
@@ -222,7 +225,7 @@ export component AppWindow inherits Window {
 
                         // 表头
                         HorizontalBox {
-                            height: 25px;
+                            height: 18px * font-scale + 7px;
                             padding: 5px;
                             spacing: 10px;
 
@@ -238,7 +241,7 @@ export component AppWindow inherits Window {
                         log_list := ListView {
                             viewport-y: root.follow-log-bottom ? self.visible-height - self.viewport-height : 0px;
                             for entry in log-entries: HorizontalBox {
-                                height: 22px;
+                                height: 15px * font-scale + 7px;
                                 padding: 5px;
                                 spacing: 10px;
 
@@ -262,19 +265,19 @@ export component AppWindow inherits Window {
 
                 HorizontalBox {
                     spacing: 10px;
-                    height: 35px;
+                    height: 25px * font-scale + 10px;
                     Text { text: "Host:"; color: white; width: 80px; vertical-alignment: center; }
                     LineEdit { text <=> ssh-host; font-size: root.body-font-size; }
                 }
                 HorizontalBox {
                     spacing: 10px;
-                    height: 35px;
+                    height: 25px * font-scale + 10px;
                     Text { text: "Username:"; color: white; width: 80px; vertical-alignment: center; }
                     LineEdit { text <=> ssh-username; font-size: root.body-font-size; }
                 }
                 HorizontalBox {
                     spacing: 10px;
-                    height: 35px;
+                    height: 25px * font-scale + 10px;
                     Text { text: "Password:"; color: white; width: 80px; vertical-alignment: center; }
                     LineEdit { text <=> ssh-password; input-type: password; font-size: root.body-font-size; }
                 }
@@ -303,6 +306,11 @@ export component AppWindow inherits Window {
                 spacing: 5px;
 
                 Text { text: "Terminal"; font-size: root.title-font-size; color: white; }
+
+                Button {
+                    text: "Open in New Window";
+                    clicked => { open-terminal-window(); }
+                }
 
                 ListView {
                     for line in terminal-output: Text {
