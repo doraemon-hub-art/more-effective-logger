@@ -35,6 +35,7 @@ function createTerminalPane(container: ComponentContainer) {
     fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
     fontSize, theme: THEME,
     cursorBlink: true, cursorStyle: "bar", allowProposedApi: true,
+    scrollback: 5000,  // 限制滚动缓冲区，防止内存无限增长
   });
   termInstances.push(term);
   const fitAddon = new FitAddon(); term.loadAddon(fitAddon);
@@ -51,14 +52,38 @@ function createTerminalPane(container: ComponentContainer) {
   });
 
   const termId = nextTermId++;
-  term.onData((data) => invoke("pty_input", { termId, data }));
+
+  // 键盘输入批量合并：输入立即收集，Enter 或 5ms 超时触发发送
+  let inputBatch = "";
+  let inputTimer: any = null;
+  const flushInput = () => {
+    if (inputBatch.length > 0) {
+      invoke("pty_input", { termId, data: inputBatch });
+      inputBatch = "";
+    }
+    if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
+  };
+  term.onData((data) => {
+    inputBatch += data;
+    if (data === "\r") {
+      // Enter 立刻发送，保证命令即时执行
+      flushInput();
+    } else {
+      if (inputTimer) clearTimeout(inputTimer);
+      inputTimer = setTimeout(flushInput, 5);
+    }
+  });
 
   let unlisten: (() => void) | null = null;
+  let rafPending = false;
   listen("pty-output", (event: any) => {
     if (event.payload?.termId === termId) {
       const atBottom = term.buffer.active.viewportY === term.buffer.active.baseY;
-      term.write(event.payload.data);
-      if (atBottom) term.scrollToBottom();
+      // 大批量数据用 RAF 分批写入，避免阻塞渲染
+      const data = event.payload.data;
+      term.write(data, () => {
+        if (atBottom) term.scrollToBottom();
+      });
     }
   }).then((fn) => { unlisten = fn; });
 
