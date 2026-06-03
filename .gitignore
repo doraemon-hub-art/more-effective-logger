@@ -21,3 +21,4 @@ Cargo.lock
 # Temporary files
 *.tmp
 *.log
+node_modules/\ndist/\nsrc-tauri/target/

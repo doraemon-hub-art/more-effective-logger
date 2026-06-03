@@ -1,0 +1,36 @@
+[package]
+name = "melogger"
+version = "0.1.0"
+description = "More Effective Logger - 多面板日志与终端工作台"
+authors = ["xuan"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-log = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+
+# PTY 跨平台终端
+portable-pty = "0.8"
+
+# 配置
+toml = "0.8"
+dirs = "5"
+
+# SSH (后续远程 tail 日志用)
+ssh2 = "0.9"
+regex = "1"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
