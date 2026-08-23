@@ -1,12 +1,14 @@
-//! Tauri build script.
-
 /*
- * @file build.rs
- * @brief Tauri build script
+ * @file index.css
+ * @brief Tailwind v4 entry and global styles
  * @author doraemon-hub-art <1660219734@qq.com>
  * @date 2026-08-23
  * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
  */
-fn main() {
-  tauri_build::build()
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
 }

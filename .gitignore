@@ -1,8 +1,14 @@
 # Rust
-/target/
-Cargo.lock
+target/
 **/*.rs.bk
 *.pdb
+
+# Node
+node_modules/
+dist/
+
+# Tauri generated
+/src-tauri/gen/schemas
 
 # IDE
 .vscode/
@@ -12,13 +18,6 @@ Cargo.lock
 *~
 .DS_Store
 
-# Build artifacts
-*.o
-*.a
-*.so
-*.dylib
-
 # Temporary files
 *.tmp
 *.log
-node_modules/\ndist/\nsrc-tauri/target/
