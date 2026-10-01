@@ -1,0 +1,102 @@
+<!--
+ * @file pane_term.html
+ * @brief Concept mock: single terminal window (pane) style
+ * @author doraemon-hub-art <1660219734@qq.com>
+ * @date 2026-10-01
+ * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>melogger — 终端窗口样式</title>
+<style>
+  :root {
+    /* Catppuccin Mocha */
+    --crust:   #11111b;
+    --mantle:  #181825;
+    --base:    #1e1e2e;
+    --surface0:#313244;
+    --overlay0:#6c7086;
+    --subtext0:#a6adc8;
+    --text:    #cdd6f4;
+    --blue:    #89b4fa;
+    --sky:     #89dceb;
+    --green:   #a6e3a1;
+
+    --ui: "Noto Sans CJK SC", "Source Han Sans SC", "Ubuntu", sans-serif;
+    --mono: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Noto Sans Mono CJK SC", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--crust);
+    font-family: var(--ui);
+    color: var(--text);
+    padding: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .pane {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--base);
+    border: 1px solid var(--blue);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(137,180,250,.35);
+  }
+
+  /* 标题栏：类型标记 + 用户@主机 …… 运行状态 */
+  .pane-head {
+    flex: 0 0 26px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 8px;
+    background: #1b2133;
+    border-bottom: 1px solid var(--surface0);
+    font-size: 11.5px;
+  }
+  .tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .5px;
+    padding: 1px 5px; border-radius: 3px;
+    background: rgba(137,180,250,.16); color: var(--blue);
+  }
+  .who { font-family: var(--mono); font-size: 11px; color: var(--text); }
+  .pane-head .spacer { flex: 1; }
+  .state { font-family: var(--mono); font-size: 10.5px; color: var(--overlay0); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+  /* 内容区：一行提示符 + 光标 */
+  .pane-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 20px;
+    padding: 10px 12px;
+    color: var(--text);
+  }
+  .ps   { color: var(--green); }
+  .path { color: var(--sky); }
+  .cursor { display: inline-block; width: 7px; height: 15px; background: var(--subtext0); vertical-align: -3px; }
+</style>
+</head>
+<body>
+
+  <div class="pane">
+    <div class="pane-head">
+      <span class="tag">TERM</span>
+      <span class="who">dev@dev-box</span>
+      <span class="spacer"></span>
+      <span class="state"><span class="dot"></span>pid 41288 · 96×28</span>
+    </div>
+    <div class="pane-body">
+      <div><span class="ps">dev@dev-box</span>:<span class="path">~/workspace/code/more-effective-logger</span>$ <span class="cursor"></span></div>
+    </div>
+  </div>
+
+</body>
+</html>

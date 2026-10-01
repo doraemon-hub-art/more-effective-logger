@@ -1,39 +1,188 @@
 /**
  * @file App.tsx
- * @brief App root component: IPC test page
+ * @brief App root: pages, top bar, pane tree, context menu, status bar
  * @author doraemon-hub-art <1660219734@qq.com>
  * @date 2026-08-23
  * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
+ *
+ * A page is a workspace: its own pane tree, its own focus, its own shells. Pages are
+ * keyboard-only (the design draws no page tabs): Ctrl+Shift+T adds one, Ctrl+Shift+W
+ * closes it, Ctrl+PageUp/PageDown switch. Inactive pages stay mounted and are only
+ * hidden — unmounting a page would dispose its terminals and kill the running shells,
+ * which is not what switching means.
+ * Panes report their state upwards (onStatus); the page is the only place that knows
+ * about pages, focus, the top bar and the status bar.
+ * Splitting is mouse-driven for now (right click -> direction -> pane type).
  */
-import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { listen } from "@tauri-apps/api/event";
+import TermPane from "./components/TermPane";
+import { type TerminalStatus } from "./components/TerminalView";
+import StatusBar, { type SysStats } from "./components/StatusBar";
+import ContextMenu, { type MenuItem } from "./components/ContextMenu";
+import TopBar, { type PageCell } from "./components/TopBar";
+import Layout from "./layout/Layout";
+import { columnCount, createTermPane, leafIds, splitPane, type PaneNode, type SplitDir } from "./layout/paneTree";
+
+/** One workspace: a pane tree plus a title. */
+interface Page {
+  id: string;
+  title: string;
+  tree: PaneNode;
+}
+
+/** Where a context menu is open, and which pane of which page it belongs to. */
+interface MenuState {
+  x: number;
+  y: number;
+  pageId: string;
+  paneId: string;
+}
+
+function newPageId(): string {
+  return `page-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function App() {
-  const [ipcResult, setIpcResult] = useState<string>("");
+  const [stats, setStats] = useState<SysStats | null>(null);
+  const [pages, setPages] = useState<Page[]>(() => [{ id: newPageId(), title: "页 1", tree: createTermPane() }]);
+  const [activePageId, setActivePageId] = useState<string | null>(null);
+  const [focusByPage, setFocusByPage] = useState<Record<string, string | null>>({});
+  const [paneStatus, setPaneStatus] = useState<Record<string, TerminalStatus>>({});
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const titleSeq = useRef(1);
 
-  async function testIpc() {
-    try {
-      const pong = await invoke<string>("app_ping");
-      setIpcResult(pong);
-    } catch (e) {
-      setIpcResult(`IPC Error: ${e}`);
-    }
-  }
+  const activePage = pages.find(page => page.id === activePageId) ?? pages[0];
+  const activeIds = useMemo(() => leafIds(activePage.tree), [activePage.tree]);
+  const columns = useMemo(() => columnCount(activePage.tree), [activePage.tree]);
+
+  useEffect(() => {
+    const subscription = listen<SysStats>("sys-stats", event => setStats(event.payload));
+    return () => {
+      void subscription.then(unlisten => unlisten());
+    };
+  }, []);
+
+  const addPage = () => {
+    const page: Page = {
+      id: newPageId(),
+      title: `页 ${titleSeq.current + 1}`,
+      tree: createTermPane(),
+    };
+    titleSeq.current += 1;
+    setPages(list => [...list, page]);
+    setActivePageId(page.id);
+  };
+
+  const closePage = (pageId: string) => {
+    if (pages.length <= 1) return;
+    const remaining = pages.filter(page => page.id !== pageId);
+    setPages(remaining);
+    if (activePage.id === pageId) setActivePageId(remaining[0].id);
+  };
+
+  const switchPage = (delta: number) => {
+    if (pages.length <= 1) return;
+    const index = pages.findIndex(page => page.id === activePage.id);
+    const next = (index + delta + pages.length) % pages.length;
+    setActivePageId(pages[next].id);
+  };
+
+  const split = (pageId: string, paneId: string, dir: SplitDir) => {
+    const fresh = createTermPane();
+    setPages(list =>
+      list.map(page => (page.id === pageId ? { ...page, tree: splitPane(page.tree, paneId, dir, fresh) } : page)),
+    );
+    setFocusByPage(current => ({ ...current, [pageId]: fresh.id }));
+  };
+
+  const reportPaneStatus = (paneId: string, status: TerminalStatus) => {
+    setPaneStatus(current => ({ ...current, [paneId]: status }));
+  };
+
+  // Keyboard: the design has no page tabs, so pages live on the keyboard. The
+  // capture phase matters — the focused terminal would otherwise swallow the combo.
+  const actions = useRef({ addPage, closePage, switchPage, activePageId: activePage.id });
+  actions.current = { addPage, closePage, switchPage, activePageId: activePage.id };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.altKey || event.metaKey) return;
+      const key = event.key.toLowerCase();
+      const handle = (run: () => void) => {
+        event.preventDefault();
+        event.stopPropagation();
+        run();
+      };
+      if (event.shiftKey && key === "t") handle(() => actions.current.addPage());
+      else if (event.shiftKey && key === "w") handle(() => actions.current.closePage(actions.current.activePageId));
+      else if (key === "pagedown") handle(() => actions.current.switchPage(1));
+      else if (key === "pageup") handle(() => actions.current.switchPage(-1));
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+
+  // Top bar: one cell per page, showing what that page's focused pane is.
+  const pageCells: PageCell[] = pages.map(page => {
+    const ids = leafIds(page.tree);
+    const pageFocus = focusByPage[page.id] ?? null;
+    const paneId = pageFocus && ids.includes(pageFocus) ? pageFocus : (ids[0] ?? null);
+    const status = paneId ? paneStatus[paneId] : undefined;
+    return {
+      id: page.id,
+      title: status?.running ? `${status.user}@${status.host}: ${status.cwd ?? "…"}` : "…",
+      geometry: status?.cols ? `${status.cols}×${status.rows}` : "—",
+      active: page.id === activePage.id,
+    };
+  });
+
+  const menuItems: MenuItem[] = menu
+    ? [
+        {
+          label: "水平分裂",
+          items: [{ label: "终端", onSelect: () => split(menu.pageId, menu.paneId, "row") }],
+        },
+        {
+          label: "垂直分裂",
+          items: [{ label: "终端", onSelect: () => split(menu.pageId, menu.paneId, "col") }],
+        },
+      ]
+    : [];
 
   return (
-    <div className="flex h-screen flex-col items-center justify-center gap-6 bg-gray-950 text-gray-100">
-      <h1 className="text-3xl font-bold tracking-tight">
-        Developer Workspace Skeleton
-      </h1>
-      <button
-        onClick={testIpc}
-        className="rounded-lg bg-blue-600 px-6 py-3 font-medium text-white transition-colors hover:bg-blue-500 active:bg-blue-700"
-      >
-        Test IPC Connection
-      </button>
-      {ipcResult && (
-        <p className="font-mono text-green-400">{ipcResult}</p>
-      )}
+    <div className="flex h-screen flex-col bg-crust">
+      <TopBar cells={pageCells} onSelectPage={setActivePageId} />
+
+      {/* pane area: grows to fill whatever the status bar leaves */}
+      <div className="relative min-h-0 flex-1 p-1">
+        {pages.map(page => {
+          const ids = leafIds(page.tree);
+          const pageFocus = focusByPage[page.id] ?? null;
+          const pageActiveId = pageFocus && ids.includes(pageFocus) ? pageFocus : (ids[0] ?? null);
+          return (
+            <div
+              key={page.id}
+              className="absolute inset-0"
+              style={{ display: page.id === activePage.id ? "block" : "none" }}
+            >
+              <Layout
+                tree={page.tree}
+                activeId={pageActiveId}
+                onFocusPane={paneId => setFocusByPage(current => ({ ...current, [page.id]: paneId }))}
+                onPaneContextMenu={(event: MouseEvent, paneId: string) =>
+                  setMenu({ x: event.clientX, y: event.clientY, pageId: page.id, paneId })
+                }
+                renderPane={(pane, isFocused) => (
+                  <TermPane paneId={pane.id} focused={isFocused} onStatus={reportPaneStatus} />
+                )}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      <StatusBar stats={stats} columns={columns} panes={activeIds.length} />
+      {menu ? <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} /> : null}
     </div>
   );
 }

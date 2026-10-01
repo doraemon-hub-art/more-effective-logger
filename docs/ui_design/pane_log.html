@@ -1,0 +1,167 @@
+<!--
+ * @file pane_log.html
+ * @brief Concept mock: single log window (pane) style — content regex filter, column header
+ * @author doraemon-hub-art <1660219734@qq.com>
+ * @date 2026-10-01
+ * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>melogger — 日志窗口样式</title>
+<style>
+  :root {
+    /* Catppuccin Mocha */
+    --crust:   #11111b;
+    --mantle:  #181825;
+    --base:    #1e1e2e;
+    --surface0:#313244;
+    --overlay0:#6c7086;
+    --subtext0:#a6adc8;
+    --subtext1:#bac2de;
+    --text:    #cdd6f4;
+    --blue:    #89b4fa;
+    --mauve:   #cba6f7;
+    --sky:     #89dceb;
+    --peach:   #fab387;
+    --yellow:  #f9e2af;
+    --red:     #f38ba8;
+
+    --ui: "Noto Sans CJK SC", "Source Han Sans SC", "Ubuntu", sans-serif;
+    --mono: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Noto Sans Mono CJK SC", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--crust);
+    font-family: var(--ui);
+    color: var(--text);
+    padding: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .pane {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--base);
+    border: 1px solid var(--blue);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(137,180,250,.35);
+  }
+
+  /* 标题栏：类型标记 + 来源 · 模式 …… 速率 */
+  .pane-head {
+    flex: 0 0 26px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 8px;
+    background: #1b2133;
+    border-bottom: 1px solid var(--surface0);
+    font-size: 11.5px;
+  }
+  .tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .5px;
+    padding: 1px 5px; border-radius: 3px;
+    background: rgba(203,166,247,.16); color: var(--mauve);
+  }
+  .tag.mode { background: rgba(137,220,235,.14); color: var(--sky); }
+  .tag.mode.read { background: rgba(250,179,135,.14); color: var(--peach); }
+  .who { font-family: var(--mono); font-size: 11px; color: var(--text); }
+  .pane-head .spacer { flex: 1; }
+  .state { font-family: var(--mono); font-size: 10.5px; color: var(--overlay0); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+  /* 过滤条：过滤条件（按内容匹配的正则）…… 匹配行/总行数 · 跟随状态 */
+  .filter {
+    flex: 0 0 22px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 10px;
+    background: #1b1b2b;
+    border-bottom: 1px solid var(--surface0);
+    font-family: var(--mono); font-size: 10.5px; color: var(--overlay0);
+  }
+  .filter .q { color: var(--yellow); }
+  .filter .spacer { flex: 1; }
+  .filter .on { color: var(--green); }
+
+  /* 列表标题：跟下面的行共用同一套列宽，保证对齐 */
+  .list-head {
+    flex: 0 0 20px;
+    display: flex; align-items: center;
+    padding: 0 10px;
+    background: #1b1b2b;
+    border-bottom: 1px solid var(--surface0);
+    font-family: var(--mono); font-size: 10.5px; color: var(--overlay0);
+  }
+  .list-head .t   { flex: 0 0 62px; }
+  .list-head .lv  { flex: 0 0 52px; }
+  .list-head .src { flex: 0 0 56px; }
+  .list-head .msg { flex: 1; }
+
+  /* 行：时间 / 级别 / 来源 / 内容 */
+  .pane-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 6px 0;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 19px;
+    color: var(--subtext1);
+  }
+  .row { display: flex; padding: 0 10px; white-space: nowrap; }
+  .row.hit { background: rgba(249,226,175,.06); }
+  .row .t   { flex: 0 0 62px; color: var(--overlay0); }
+  .row .lv  { flex: 0 0 52px; font-weight: 600; }
+  .row .lv.I { color: var(--blue); }
+  .row .lv.W { color: var(--yellow); }
+  .row .lv.E { color: var(--red); }
+  .row .lv.D { color: var(--overlay0); }
+  .row .src { flex: 0 0 56px; color: var(--subtext0); }
+  .row .msg { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+
+  <!--
+    同一个日志组件，两种源（模式只是参数，不是两套 UI）：
+      远程 tail -f ：模式标记 [远程]（青 --sky），标题栏右端 ● 速率，过滤条右端 跟随中
+      读取文件     ：模式标记 [文件]（橙 --peach），标题栏右端 行数 · 体积，过滤条右端 已读全部
+    下面这版画的是「远程 tail -f」；其余部分（过滤条、列表标题、四列行）两种模式完全共用。
+  -->
+
+  <div class="pane">
+    <div class="pane-head">
+      <span class="tag">LOG</span>
+      <span class="tag mode">远程</span>
+      <span class="who">edge-a:/var/log/app.log · tail -f</span>
+      <span class="spacer"></span>
+      <span class="state"><span class="dot"></span>3 行/秒</span>
+    </div>
+    <div class="filter">
+      <span>内容</span><span class="q">closed|failed|rotated|resum</span>
+      <span class="spacer"></span>
+      <span>匹配 6/11</span>
+      <span class="on">跟随中</span>
+    </div>
+    <div class="list-head"><span class="t">时间</span><span class="lv">级别</span><span class="src">来源</span><span class="msg">内容</span></div>
+    <div class="pane-body">
+      <div class="row"><span class="t">09:41:02</span><span class="lv I">INFO</span><span class="src">pty</span><span class="msg">session spawned (pid 41288, cols 96 rows 28)</span></div>
+      <div class="row"><span class="t">09:41:03</span><span class="lv I">INFO</span><span class="src">ssh</span><span class="msg">connected host=198.51.100.7:22 (rtt 31ms)</span></div>
+      <div class="row hit"><span class="t">09:41:07</span><span class="lv W">WARN</span><span class="src">tail</span><span class="msg">file rotated, reopening /var/log/app.log</span></div>
+      <div class="row hit"><span class="t">09:41:12</span><span class="lv E">ERROR</span><span class="src">ssh</span><span class="msg">channel closed: broken pipe, retry in 5s (2/5)</span></div>
+      <div class="row hit"><span class="t">09:41:17</span><span class="lv I">INFO</span><span class="src">ssh</span><span class="msg">reconnected, resuming tail -f</span></div>
+      <div class="row"><span class="t">09:41:19</span><span class="lv W">WARN</span><span class="src">parse</span><span class="msg">line 10432 too long (8192B), truncated</span></div>
+      <div class="row"><span class="t">09:41:21</span><span class="lv D">DEBUG</span><span class="src">filter</span><span class="msg">11 lines in buffer, 6 matched</span></div>
+      <div class="row hit"><span class="t">09:41:23</span><span class="lv E">ERROR</span><span class="src">ssh</span><span class="msg">auth failed for user=root</span></div>
+      <div class="row"><span class="t">09:41:24</span><span class="lv I">INFO</span><span class="src">ssh</span><span class="msg">retrying with publickey auth</span></div>
+      <div class="row hit"><span class="t">09:41:26</span><span class="lv W">WARN</span><span class="src">pty</span><span class="msg">resize ignored: pty already closed (pid 41288)</span></div>
+      <div class="row hit"><span class="t">09:41:28</span><span class="lv I">INFO</span><span class="src">ssh</span><span class="msg">connected, tail resumed at offset 2981442</span></div>
+    </div>
+  </div>
+
+</body>
+</html>

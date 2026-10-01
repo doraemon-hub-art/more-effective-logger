@@ -8,5 +8,5 @@
  * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
  */
 fn main() {
-  tauri_build::build()
+    tauri_build::build()
 }

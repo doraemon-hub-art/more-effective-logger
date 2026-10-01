@@ -21,3 +21,8 @@ dist/
 # Temporary files
 *.tmp
 *.log
+
+# Concept-mock renders and screenshots: they can carry real machine details
+# (host names, user names, paths), so they stay out of the repository.
+# The hand-written source of every mock is docs/ui_design/*.html.
+docs/ui_design/*.png

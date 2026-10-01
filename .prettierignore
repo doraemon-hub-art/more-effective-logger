@@ -1,0 +1,11 @@
+# Hand-written docs and design drafts: never rewritten by a formatter.
+docs/
+
+# Build output and dependencies.
+dist/
+node_modules/
+target/
+
+# Lock files.
+package-lock.json
+Cargo.lock

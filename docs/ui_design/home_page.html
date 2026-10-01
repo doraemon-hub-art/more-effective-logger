@@ -1,0 +1,279 @@
+<!--
+ * @file home_page.html
+ * @brief Concept mock of the melogger home page (2 columns / 3 panes; top strip = one equal cell
+ *        per column, each cell showing the focused pane's type + path; bottom = one status bar:
+ *        window-level system info (CPU, temp, mem, uptime, app runtime) on the left, current page
+ *        info (focus, font, pane counts) on the right, the system half staying put across page
+ *        switches and pane zoom)
+ * @author doraemon-hub-art <1660219734@qq.com>
+ * @date 2026-10-01
+ * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>melogger — 主页面概念图</title>
+<style>
+  :root {
+    /* Catppuccin Mocha */
+    --crust:   #11111b;
+    --mantle:  #181825;
+    --base:    #1e1e2e;
+    --surface0:#313244;
+    --surface1:#45475a;
+    --overlay0:#6c7086;
+    --overlay1:#7f849c;
+    --subtext0:#a6adc8;
+    --subtext1:#bac2de;
+    --text:    #cdd6f4;
+    --blue:    #89b4fa;
+    --mauve:   #cba6f7;
+    --sky:     #89dceb;
+    --green:   #a6e3a1;
+    --yellow:  #f9e2af;
+    --red:     #f38ba8;
+
+    --ui: "Noto Sans CJK SC", "Source Han Sans SC", "Ubuntu", sans-serif;
+    --mono: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Noto Sans Mono CJK SC", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+  body {
+    background: var(--crust);
+    font-family: var(--ui);
+    color: var(--text);
+    padding: 20px;
+    height: 100vh;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- 窗口外壳 ---------- */
+  .frame {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--base);
+    border: 1px solid var(--surface0);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 18px 50px rgba(0,0,0,.55);
+  }
+
+  /* ---------- 顶部标题条 ----------
+     一格一个面板，按面板数量平分（3 个面板 = 各三分之一）。
+     每格显示该面板的「类型 + 路径」：日志给文件路径，终端给当前目录。 */
+  .titlebar {
+    flex: 0 0 34px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    background: var(--crust);
+    border-bottom: 1px solid var(--surface0);
+    align-items: stretch;
+  }
+  .seg {
+    display: flex; align-items: center; gap: 8px;
+    min-width: 0;
+    padding: 0 12px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--overlay0);
+    border-top: 2px solid transparent;
+    border-right: 1px solid rgba(49,50,68,.45);
+    white-space: nowrap;
+  }
+  .seg:last-child { border-right: none; }
+  .seg.active {
+    background: var(--base);
+    color: var(--text);
+    border-top-color: var(--blue);
+    border-bottom: 1px solid var(--base);
+    margin-bottom: -1px;
+  }
+  .seg .p { overflow: hidden; text-overflow: ellipsis; }
+  /* 类型标记：跟面板标题栏里的是同一个，缩小一号 */
+  .seg .tag {
+    flex: 0 0 auto;
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .5px;
+    padding: 1px 5px; border-radius: 3px;
+    background: rgba(137,180,250,.16); color: var(--blue);
+  }
+  .seg .tag.log { background: rgba(203,166,247,.16); color: var(--mauve); }
+
+  /* 窗口按钮跟在最后一段里 */
+  .winbtn { display: flex; align-items: center; gap: 14px; margin-left: auto; padding-left: 12px; }
+  .winbtn i { width: 11px; height: 11px; border-radius: 50%; background: var(--surface1); display: block; }
+  .winbtn i.close { background: var(--red); opacity: .85; }
+
+  /* ---------- 工作区：两栏（第 1 栏一个大日志，第 2 栏上下两个终端） ---------- */
+  .workspace {
+    flex: 1;
+    min-height: 0;
+    padding: 8px;
+    display: grid;
+    grid-template-columns: 1.75fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--base);
+    border: 1px solid var(--surface0);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .pane.focused { border-color: var(--blue); box-shadow: 0 0 0 1px rgba(137,180,250,.35); }
+  /* 列/行位置写死：DOM 顺序 = 从左到右的栏顺序，顶部格子才能和下面每一栏一一对上 */
+  .c1  { grid-column: 1; grid-row: 1 / span 2; }   /* 第 1 栏：一个日志面板 */
+  .c2a { grid-column: 2; grid-row: 1; }             /* 第 2 栏上 */
+  .c2b { grid-column: 2; grid-row: 2; }             /* 第 2 栏下 */
+
+  .pane-head {
+    flex: 0 0 26px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 8px;
+    background: var(--mantle);
+    border-bottom: 1px solid var(--surface0);
+    font-size: 11.5px;
+  }
+  /* 焦点只有一个：蓝框 + 标题栏亮一档 */
+  .pane.focused .pane-head { background: #1b2133; }
+  .tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .5px;
+    padding: 1px 5px; border-radius: 3px;
+    background: rgba(137,180,250,.16); color: var(--blue);
+  }
+  .tag.log { background: rgba(203,166,247,.16); color: var(--mauve); }
+  .pane-title { color: var(--text); }
+  .pane-sub { font-family: var(--mono); font-size: 10.5px; color: var(--overlay0); }
+
+  .pane-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 20px;
+    padding: 10px 12px;
+    color: var(--subtext1);
+  }
+  .ps   { color: var(--green); }
+  .path { color: var(--sky); }
+  .root { color: var(--red); }
+  .cursor { display: inline-block; width: 7px; height: 15px; background: var(--subtext0); vertical-align: -3px; }
+
+  /* 日志面板内的行 */
+  .logline { white-space: nowrap; overflow: hidden; }
+  .logline .t { color: var(--overlay0); }
+  .logline .lv { font-weight: 600; }
+  .logline .lv.I { color: var(--blue); }
+  .logline .lv.W { color: var(--yellow); }
+  .logline .lv.E { color: var(--red); }
+  .logline .msg { color: var(--subtext1); }
+
+  /* 状态栏：一行两半 —— 左半是系统信息（窗口级，切页面、放大子窗口都在），右半是当前页面信息。 */
+  .statusbar {
+    flex: 0 0 26px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 10px;
+    background: var(--mantle);
+    border-top: 1px solid var(--surface0);
+    font-family: var(--mono); font-size: 10.5px; color: var(--overlay1);
+  }
+  .statusbar .focus { color: var(--mauve); }
+  /* 只允许焦点那一段被压缩/省略，系统信息和字体/栏·面板 一律不换行、不缩 */
+  .statusbar > span { white-space: nowrap; flex: 0 0 auto; }
+  .statusbar .spacer { flex: 1; }
+  .statusbar .nowrap {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto;
+  }
+  .statusbar .m { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+  .statusbar .k { color: var(--overlay0); letter-spacing: .5px; }
+  .statusbar .v { color: var(--subtext0); }
+  .statusbar .u { color: var(--overlay0); }
+  .statusbar .meter {
+    display: block; width: 46px; height: 4px; border-radius: 2px;
+    background: var(--surface0); overflow: hidden;
+  }
+  .statusbar .meter i { display: block; height: 100%; }
+  .statusbar .m.cpu .meter i { background: var(--green); }
+  .statusbar .m.mem .meter i { background: var(--sky); }
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <!-- 顶部：一格一个面板，三个面板 = 三格，各占三分之一 -->
+  <div class="titlebar">
+    <div class="seg active"><span class="tag log">LOG</span><span class="p">/var/log/app.log</span></div>
+    <div class="seg"><span class="tag">TERM</span><span class="p">~</span></div>
+    <div class="seg"><span class="tag">TERM</span><span class="p">/srv/app/logs</span><span class="winbtn"><i></i><i></i><i class="close"></i></span></div>
+  </div>
+
+  <!-- 工作区 -->
+  <section class="workspace">
+
+    <!-- 第 1 栏：日志（全局焦点） -->
+    <div class="pane c1 focused">
+      <div class="pane-head">
+        <span class="tag log">LOG</span>
+        <span class="pane-title">/var/log/app.log</span>
+        <span class="pane-sub">tail -f</span>
+      </div>
+      <div class="pane-body">
+        <div class="logline"><span class="t">09:41:02</span> <span class="lv I">INFO</span> <span class="msg">pty: session spawned (pid 41288)</span></div>
+        <div class="logline"><span class="t">09:41:07</span> <span class="lv W">WARN</span> <span class="msg">tail: file rotated, reopening</span></div>
+        <div class="logline"><span class="t">09:41:12</span> <span class="lv E">ERROR</span> <span class="msg">ssh: channel closed: broken pipe</span></div>
+        <div class="logline"><span class="t">09:41:17</span> <span class="lv I">INFO</span> <span class="msg">ssh: reconnected, resuming tail -f</span></div>
+        <div class="logline"><span class="t">09:41:23</span> <span class="lv E">ERROR</span> <span class="msg">ssh: auth failed for user=root</span></div>
+        <div class="logline"><span class="t">09:41:28</span> <span class="lv I">INFO</span> <span class="msg">ssh: connected, tail resumed</span></div>
+      </div>
+    </div>
+
+    <!-- 第 2 栏上：终端 -->
+    <div class="pane c2a">
+      <div class="pane-head">
+        <span class="tag">TERM</span>
+        <span class="pane-title">dev-box</span>
+        <span class="pane-sub">root</span>
+      </div>
+      <div class="pane-body">
+        <div><span class="root">root@dev-box</span>:<span class="path">~</span># <span class="cursor"></span></div>
+      </div>
+    </div>
+
+    <!-- 第 2 栏下：终端 -->
+    <div class="pane c2b">
+      <div class="pane-head">
+        <span class="tag">TERM</span>
+        <span class="pane-title">edge-a</span>
+        <span class="pane-sub">/srv/app/logs</span>
+      </div>
+      <div class="pane-body">
+        <div><span class="root">root@edge-a</span>:<span class="path">/srv/app/logs</span># <span class="cursor"></span></div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- 状态栏：一行。左半 = 系统信息（窗口级，切页面、放大子窗口都保留）；右半 = 当前页面信息 -->
+  <div class="statusbar">
+    <span class="m cpu"><span class="k">CPU</span><span class="meter"><i style="width:23%"></i></span><span class="v">23%</span></span>
+    <span class="m"><span class="k">温度</span><span class="v">51°C</span></span>
+    <span class="m mem"><span class="k">内存</span><span class="meter"><i style="width:41%"></i></span><span class="v">41%</span><span class="u">6.4 / 15.6 GB</span></span>
+    <span class="m"><span class="k">开机</span><span class="v">3天 4:21</span></span>
+    <span class="m"><span class="k">运行</span><span class="v">2:18</span></span>
+    <span class="spacer"></span>
+    <span class="nowrap">焦点 <span class="focus">LOG · /var/log/app.log</span></span>
+    <span>字体 100%</span>
+    <span>栏 2 · 面板 3</span>
+  </div>
+</div>
+</body>
+</html>

@@ -1,11 +1,36 @@
 /*
  * @file index.css
- * @brief Tailwind v4 entry and global styles
+ * @brief Tailwind v4 entry, project theme tokens, global styles
  * @author doraemon-hub-art <1660219734@qq.com>
  * @date 2026-08-23
  * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
  */
 @import "tailwindcss";
+
+/*
+ * Theme tokens (Catppuccin Mocha). Declaring them here registers them with Tailwind,
+ * so `bg-base`, `text-fg`, `border-surface0` ... work everywhere without a config file.
+ */
+@theme {
+  --color-crust: #11111b;
+  --color-mantle: #181825;
+  --color-base: #1e1e2e;
+  --color-surface0: #313244;
+  --color-surface1: #45475a;
+  --color-overlay0: #6c7086;
+  --color-overlay1: #7f849c;
+  --color-subtext0: #a6adc8;
+  --color-subtext1: #bac2de;
+  --color-fg: #cdd6f4;
+  --color-blue: #89b4fa;
+  --color-sky: #89dceb;
+  --color-green: #a6e3a1;
+  --color-yellow: #f9e2af;
+  --color-red: #f38ba8;
+  --color-mauve: #cba6f7;
+
+  --font-mono: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Noto Sans Mono CJK SC", monospace;
+}
 
 html,
 body,
