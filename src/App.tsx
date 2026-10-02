@@ -7,9 +7,11 @@
  *
  * A page is a workspace: its own pane tree, its own focus, its own shells. Pages are
  * keyboard-only (the design draws no page tabs): Ctrl+Shift+T adds one, Ctrl+Shift+W
- * closes it, Ctrl+PageUp/PageDown switch. Inactive pages stay mounted and are only
+ * closes it, Alt+PageUp/PageDown switch. Inactive pages stay mounted and are only
  * hidden — unmounting a page would dispose its terminals and kill the running shells,
  * which is not what switching means.
+ * Alt+arrows move the focus between the panes of the current page (geometric
+ * neighbours, see neighborInDirection).
  * Panes report their state upwards (onStatus); the page is the only place that knows
  * about pages, focus, the top bar and the status bar.
  * Splitting is mouse-driven for now (right click -> direction -> pane type).
@@ -23,6 +25,7 @@ import ContextMenu, { type MenuItem } from "./components/ContextMenu";
 import TopBar, { type PageCell } from "./components/TopBar";
 import Layout from "./layout/Layout";
 import { columnCount, createTermPane, leafIds, splitPane, type PaneNode, type SplitDir } from "./layout/paneTree";
+import { neighborInDirection, paneBoxes, type Direction } from "./layout/paneRects";
 
 /** One workspace: a pane tree plus a title. */
 interface Page {
@@ -43,6 +46,14 @@ function newPageId(): string {
   return `page-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** Alt+arrows move pane focus; these are the arrow spellings in `event.key`. */
+const ARROW_DIRECTION: Record<string, Direction | undefined> = {
+  arrowleft: "left",
+  arrowright: "right",
+  arrowup: "up",
+  arrowdown: "down",
+};
+
 function App() {
   const [stats, setStats] = useState<SysStats | null>(null);
   const [pages, setPages] = useState<Page[]>(() => [{ id: newPageId(), title: "页 1", tree: createTermPane() }]);
@@ -55,6 +66,10 @@ function App() {
   const activePage = pages.find(page => page.id === activePageId) ?? pages[0];
   const activeIds = useMemo(() => leafIds(activePage.tree), [activePage.tree]);
   const columns = useMemo(() => columnCount(activePage.tree), [activePage.tree]);
+  const boxes = useMemo(() => paneBoxes(activePage.tree), [activePage.tree]);
+  // Focus follows clicks, new panes and keyboard moves; the first pane is the fallback.
+  const focusedPane = focusByPage[activePage.id] ?? null;
+  const activePaneId = focusedPane && activeIds.includes(focusedPane) ? focusedPane : (activeIds[0] ?? null);
 
   useEffect(() => {
     const subscription = listen<SysStats>("sys-stats", event => setStats(event.payload));
@@ -100,23 +115,39 @@ function App() {
     setPaneStatus(current => ({ ...current, [paneId]: status }));
   };
 
+  /** Alt+arrows: hand the focus to the pane next to the current one. */
+  const movePaneFocus = (dir: Direction) => {
+    if (!activePaneId) return;
+    const next = neighborInDirection(boxes, activePaneId, dir);
+    if (next) setFocusByPage(current => ({ ...current, [activePage.id]: next }));
+  };
+
   // Keyboard: the design has no page tabs, so pages live on the keyboard. The
   // capture phase matters — the focused terminal would otherwise swallow the combo.
-  const actions = useRef({ addPage, closePage, switchPage, activePageId: activePage.id });
-  actions.current = { addPage, closePage, switchPage, activePageId: activePage.id };
+  // Only the combinations claimed here are taken; everything else (Ctrl+C, Ctrl+D,
+  // Alt+<letter>, ...) stays with the shell.
+  const actions = useRef({ addPage, closePage, switchPage, movePaneFocus, activePageId: activePage.id });
+  actions.current = { addPage, closePage, switchPage, movePaneFocus, activePageId: activePage.id };
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || event.altKey || event.metaKey) return;
       const key = event.key.toLowerCase();
       const handle = (run: () => void) => {
         event.preventDefault();
         event.stopPropagation();
         run();
       };
+      // Alt+arrows: focus moves between the panes of the current page.
+      // Alt+PageUp/PageDown: the page before / after this one.
+      if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        const dir = ARROW_DIRECTION[key];
+        if (dir) handle(() => actions.current.movePaneFocus(dir));
+        else if (key === "pageup") handle(() => actions.current.switchPage(-1));
+        else if (key === "pagedown") handle(() => actions.current.switchPage(1));
+        return;
+      }
+      if (!event.ctrlKey || event.altKey || event.metaKey) return;
       if (event.shiftKey && key === "t") handle(() => actions.current.addPage());
       else if (event.shiftKey && key === "w") handle(() => actions.current.closePage(actions.current.activePageId));
-      else if (key === "pagedown") handle(() => actions.current.switchPage(1));
-      else if (key === "pageup") handle(() => actions.current.switchPage(-1));
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);

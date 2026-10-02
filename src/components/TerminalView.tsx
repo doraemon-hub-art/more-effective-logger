@@ -90,12 +90,18 @@ export interface TerminalViewProps {
   onStatus?: (status: TerminalStatus) => void;
   /** Called when the shell exited on its own. */
   onExit?: (id: string) => void;
+  /**
+   * Active pane: takes keyboard focus. Moving pane focus with the keyboard has to
+   * move the keystrokes too, otherwise you keep typing into the previous pane.
+   */
+  focused?: boolean;
   /** Box classes; defaults to filling the parent. */
   className?: string;
 }
 
-function TerminalView({ id, onStatus, onExit, className }: TerminalViewProps) {
+function TerminalView({ id, onStatus, onExit, focused, className }: TerminalViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const termRef = useRef<Terminal | null>(null);
   // Kept in refs so a re-render with fresh closures never tears the pty down.
   const statusRef = useRef(onStatus);
   const exitRef = useRef(onExit);
@@ -137,6 +143,7 @@ function TerminalView({ id, onStatus, onExit, className }: TerminalViewProps) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
+    termRef.current = term;
 
     const listeners: Array<() => void> = [];
     let disposed = false;
@@ -224,8 +231,15 @@ function TerminalView({ id, onStatus, onExit, className }: TerminalViewProps) {
       listeners.forEach(off => off());
       void invoke("pty_kill", { id: sessionId });
       term.dispose();
+      termRef.current = null;
     };
   }, [id]);
+
+  // Pane focus -> keyboard focus. Spawning focuses a fresh terminal on its own
+  // (see above); this covers the moves that happen later.
+  useEffect(() => {
+    if (focused) termRef.current?.focus();
+  }, [focused]);
 
   return <div ref={hostRef} className={className ?? "h-full w-full"} />;
 }

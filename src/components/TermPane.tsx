@@ -61,7 +61,7 @@ function TermPane({ paneId, focused = false, onStatus }: TermPaneProps) {
 
       {/* pane body: the terminal widget fills it */}
       <div className="min-h-0 flex-1 overflow-hidden bg-base p-2">
-        <TerminalView id={paneId} onStatus={handleStatus} />
+        <TerminalView id={paneId} focused={focused} onStatus={handleStatus} />
       </div>
     </div>
   );
