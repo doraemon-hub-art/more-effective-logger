@@ -13,6 +13,7 @@
  * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
  */
 use crate::modules::pty;
+use crate::modules::serial;
 use crate::state::AppState;
 use tauri::{AppHandle, State};
 
@@ -81,4 +82,37 @@ pub async fn terminal_cwd(
         .get(&id)
         .ok_or_else(|| format!("unknown terminal: {id}"))?;
     Ok(session.cwd())
+}
+
+/// Scan the machine's serial ports for the picker (reads /sys and /proc only)
+#[tauri::command]
+pub async fn serial_list() -> Result<Vec<serial::PortInfo>, String> {
+    Ok(serial::list())
+}
+
+/// Open a serial port under the given pane id
+#[tauri::command]
+pub async fn serial_open(
+    app: AppHandle,
+    id: String,
+    device: String,
+    baud: u32,
+) -> Result<serial::OpenInfo, String> {
+    serial::open(&app, &id, &device, baud)
+}
+
+/// Send raw bytes out of an open port
+#[tauri::command]
+pub async fn serial_write(
+    state: State<'_, AppState>,
+    id: String,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    serial::write(&state, &id, &data)
+}
+
+/// Stop the reader thread of a port; it closes the fd and emits the exit event
+#[tauri::command]
+pub async fn serial_close(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    serial::close(&state, &id)
 }

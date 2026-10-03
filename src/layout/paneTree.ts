@@ -10,8 +10,8 @@
  * parent box, so the layout survives window resizing without any JS.
  */
 
-/** Pane kinds. Only terminals exist so far. */
-export type PaneType = "term";
+/** Pane kinds: terminals and serial ports. */
+export type PaneType = "term" | "serial";
 
 /** "row" splits left|right, "col" splits top/bottom. */
 export type SplitDir = "row" | "col";
@@ -42,6 +42,16 @@ export function newPaneId(): string {
 /** A fresh terminal pane. */
 export function createTermPane(): PaneLeaf {
   return { kind: "pane", id: newPaneId(), type: "term" };
+}
+
+/** A fresh serial port pane. */
+export function createSerialPane(): PaneLeaf {
+  return { kind: "pane", id: newPaneId(), type: "serial" };
+}
+
+/** A fresh pane of the given kind. */
+export function createPane(type: PaneType): PaneLeaf {
+  return type === "serial" ? createSerialPane() : createTermPane();
 }
 
 /** All panes of a tree, left to right / top to bottom. */

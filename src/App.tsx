@@ -19,12 +19,22 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import TermPane from "./components/TermPane";
+import SerialPane from "./components/SerialPane";
 import { type TerminalStatus } from "./components/TerminalView";
 import StatusBar, { type SysStats } from "./components/StatusBar";
 import ContextMenu, { type MenuItem } from "./components/ContextMenu";
 import TopBar, { type PageCell } from "./components/TopBar";
 import Layout from "./layout/Layout";
-import { columnCount, createTermPane, leafIds, splitPane, type PaneNode, type SplitDir } from "./layout/paneTree";
+import {
+  columnCount,
+  createPane,
+  createTermPane,
+  leafIds,
+  splitPane,
+  type PaneNode,
+  type PaneType,
+  type SplitDir,
+} from "./layout/paneTree";
 import { neighborInDirection, paneBoxes, type Direction } from "./layout/paneRects";
 
 /** One workspace: a pane tree plus a title. */
@@ -60,6 +70,8 @@ function App() {
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [focusByPage, setFocusByPage] = useState<Record<string, string | null>>({});
   const [paneStatus, setPaneStatus] = useState<Record<string, TerminalStatus>>({});
+  /** Non-terminal panes describe themselves (serial: device + rate). */
+  const [paneLabel, setPaneLabel] = useState<Record<string, string>>({});
   const [menu, setMenu] = useState<MenuState | null>(null);
   const titleSeq = useRef(1);
 
@@ -103,8 +115,8 @@ function App() {
     setActivePageId(pages[next].id);
   };
 
-  const split = (pageId: string, paneId: string, dir: SplitDir) => {
-    const fresh = createTermPane();
+  const split = (pageId: string, paneId: string, dir: SplitDir, type: PaneType) => {
+    const fresh = createPane(type);
     setPages(list =>
       list.map(page => (page.id === pageId ? { ...page, tree: splitPane(page.tree, paneId, dir, fresh) } : page)),
     );
@@ -113,6 +125,11 @@ function App() {
 
   const reportPaneStatus = (paneId: string, status: TerminalStatus) => {
     setPaneStatus(current => ({ ...current, [paneId]: status }));
+  };
+
+  /** Panes that are not terminals say what they are in their own words. */
+  const reportPaneLabel = (paneId: string, label: string) => {
+    setPaneLabel(current => (current[paneId] === label ? current : { ...current, [paneId]: label }));
   };
 
   /** Alt+arrows: hand the focus to the pane next to the current one. */
@@ -159,9 +176,11 @@ function App() {
     const pageFocus = focusByPage[page.id] ?? null;
     const paneId = pageFocus && ids.includes(pageFocus) ? pageFocus : (ids[0] ?? null);
     const status = paneId ? paneStatus[paneId] : undefined;
+    // A terminal reports user@host: cwd; anything else reports its own label.
+    const label = paneId ? paneLabel[paneId] : undefined;
     return {
       id: page.id,
-      title: status?.running ? `${status.user}@${status.host}: ${status.cwd ?? "…"}` : "…",
+      title: status?.running ? `${status.user}@${status.host}: ${status.cwd ?? "…"}` : (label ?? "…"),
       geometry: status?.cols ? `${status.cols}×${status.rows}` : "—",
       active: page.id === activePage.id,
     };
@@ -171,11 +190,17 @@ function App() {
     ? [
         {
           label: "水平分裂",
-          items: [{ label: "终端", onSelect: () => split(menu.pageId, menu.paneId, "row") }],
+          items: [
+            { label: "终端", onSelect: () => split(menu.pageId, menu.paneId, "row", "term") },
+            { label: "串口", onSelect: () => split(menu.pageId, menu.paneId, "row", "serial") },
+          ],
         },
         {
           label: "垂直分裂",
-          items: [{ label: "终端", onSelect: () => split(menu.pageId, menu.paneId, "col") }],
+          items: [
+            { label: "终端", onSelect: () => split(menu.pageId, menu.paneId, "col", "term") },
+            { label: "串口", onSelect: () => split(menu.pageId, menu.paneId, "col", "serial") },
+          ],
         },
       ]
     : [];
@@ -203,9 +228,13 @@ function App() {
                 onPaneContextMenu={(event: MouseEvent, paneId: string) =>
                   setMenu({ x: event.clientX, y: event.clientY, pageId: page.id, paneId })
                 }
-                renderPane={(pane, isFocused) => (
-                  <TermPane paneId={pane.id} focused={isFocused} onStatus={reportPaneStatus} />
-                )}
+                renderPane={(pane, isFocused) =>
+                  pane.type === "serial" ? (
+                    <SerialPane paneId={pane.id} focused={isFocused} onLabel={reportPaneLabel} />
+                  ) : (
+                    <TermPane paneId={pane.id} focused={isFocused} onStatus={reportPaneStatus} />
+                  )
+                }
               />
             </div>
           );

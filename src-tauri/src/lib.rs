@@ -28,7 +28,11 @@ pub fn run() {
             commands::pty_input,
             commands::pty_resize,
             commands::pty_kill,
-            commands::terminal_cwd
+            commands::terminal_cwd,
+            commands::serial_list,
+            commands::serial_open,
+            commands::serial_write,
+            commands::serial_close
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

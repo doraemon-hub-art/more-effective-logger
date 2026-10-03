@@ -1,0 +1,430 @@
+<!--
+ * @file pane_serial.html
+ * @brief Concept mock: serial pane, working state — the device selector lives in the header
+ *        and drops down the scan list (clicking a row opens its details below it); the body
+ *        is the byte stream plus session stats (RX/TX bytes, errors, rate) and a send line.
+ *        Protocol-agnostic: raw bytes, no frame decoding.
+ * @author doraemon-hub-art <1660219734@qq.com>
+ * @date 2026-10-02
+ * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>melogger — 串口面板（工作态）</title>
+<style>
+  :root {
+    /* Catppuccin Mocha */
+    --crust:   #11111b;
+    --mantle:  #181825;
+    --base:    #1e1e2e;
+    --surface0:#313244;
+    --overlay0:#6c7086;
+    --subtext0:#a6adc8;
+    --subtext1:#bac2de;
+    --text:    #cdd6f4;
+    --blue:    #89b4fa;
+    --sky:     #89dceb;
+    --green:   #a6e3a1;
+    --peach:   #fab387;
+
+    --ui: "Noto Sans CJK SC", "Source Han Sans SC", "Ubuntu", sans-serif;
+    --mono: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Noto Sans Mono CJK SC", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--crust);
+    font-family: var(--ui);
+    color: var(--text);
+    padding: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .pane {
+    position: relative;
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    background: var(--base);
+    border: 1px solid var(--blue);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(137,180,250,.35);
+  }
+
+  /* 标题栏：类型标记 + 设备选择器 …… 连接状态 */
+  .pane-head {
+    flex: 0 0 28px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 8px;
+    background: #1b2133;
+    border-bottom: 1px solid var(--surface0);
+    font-size: 11.5px;
+  }
+  .tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .5px;
+    padding: 1px 5px; border-radius: 3px;
+    background: rgba(166,227,161,.16); color: var(--green);
+  }
+  /* 设备选择器：点它下拉出扫描列表 */
+  .pick {
+    font-family: var(--mono); font-size: 11px;
+    display: flex; align-items: center; gap: 6px;
+    padding: 1px 7px; border-radius: 3px;
+    border: 1px solid var(--surface0); color: var(--text);
+    cursor: pointer;
+  }
+  .pick i { font-style: normal; color: var(--overlay0); font-size: 9px; }
+  .pane-head .spacer { flex: 1; }
+  .params { font-family: var(--mono); font-size: 10.5px; color: var(--overlay0); }
+  .state { font-family: var(--mono); font-size: 10.5px; color: var(--overlay0); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+  /* 下拉：扫描到的串口列表，点一行在它下面展开详情 */
+  .drop {
+    position: absolute; left: 8px; right: 8px; top: 30px; z-index: 5;
+    max-height: calc(100% - 40px);
+    display: flex; flex-direction: column;
+    background: #1b1b2b;
+    border: 1px solid var(--surface0); border-radius: 5px;
+    box-shadow: 0 14px 34px rgba(0,0,0,.55);
+    overflow: hidden;
+  }
+  .pane.picked .pick { border-color: var(--green); color: var(--green); }
+  .pane:not(.picked) .drop { display: none; }
+
+  .drop-head {
+    flex: 0 0 22px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--surface0);
+    font-family: var(--mono); font-size: 10.5px; color: var(--overlay0);
+  }
+  .drop-head .spacer { flex: 1; }
+  .ports { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 3px; }
+
+  .port { border: 1px solid transparent; border-radius: 4px; }
+  .port.open { border-color: var(--surface0); background: rgba(30,30,46,.6); }
+
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px; border-radius: 4px;
+    font-family: var(--mono); font-size: 11.5px;
+    cursor: pointer;
+  }
+  .row:hover { background: #23233a; }
+  .caret { width: 9px; color: var(--overlay0); font-size: 9px; }
+  .dev { color: var(--text); }
+  .port.open .dev { color: var(--green); }
+  .chip {
+    font-size: 10px; padding: 1px 5px; border-radius: 3px;
+    background: rgba(137,220,235,.14); color: var(--sky);
+  }
+  .desc { font-size: 10.5px; color: var(--overlay0); }
+  .row .spacer { flex: 1; }
+  .id { font-size: 10.5px; color: var(--overlay0); }
+  .occ { font-size: 10.5px; color: var(--peach); }
+  .on { font-size: 10.5px; color: var(--green); }
+
+  .detail { display: none; padding: 0 8px 8px 27px; font-family: var(--mono); font-size: 10.5px; }
+  .port.open .detail { display: block; }
+  .kv { display: flex; gap: 20px; color: var(--overlay0); }
+  .kv b { font-weight: 400; color: var(--subtext1); }
+  .sep { height: 1px; background: var(--surface0); margin: 7px 0 8px; }
+  .opts { display: flex; align-items: center; gap: 7px; }
+  .opts .k { color: var(--overlay0); }
+  .opts .k:not(:first-child) { margin-left: 6px; }
+  .opt { padding: 1px 7px; border-radius: 3px; border: 1px solid var(--surface0); color: var(--subtext0); }
+  .opt.on { border-color: var(--green); color: var(--green); background: rgba(166,227,161,.1); }
+  .opts .spacer { flex: 1; }
+  .fix { color: var(--subtext1); }
+  .btn {
+    padding: 3px 14px; border-radius: 4px;
+    font-family: var(--mono); font-size: 11px;
+    border: 1px solid var(--green); color: var(--green); background: rgba(166,227,161,.12);
+  }
+  .btn.off { border-color: var(--surface0); color: var(--overlay0); background: transparent; }
+
+  /* 会话统计条：收发字节 / 错误 / 帧率口径 / 视图 */
+  .stats {
+    flex: 0 0 22px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 10px;
+    background: #1b1b2b;
+    border-bottom: 1px solid var(--surface0);
+    font-family: var(--mono); font-size: 10.5px; color: var(--overlay0);
+  }
+  .stats b { font-weight: 400; color: var(--subtext1); }
+  .stats .spacer { flex: 1; }
+  .view { display: flex; gap: 6px; }
+  .view span { padding: 1px 7px; border-radius: 3px; border: 1px solid var(--surface0); color: var(--subtext0); }
+  .view span.on { border-color: var(--green); color: var(--green); background: rgba(166,227,161,.1); }
+
+  /* 数据区：裸字节流的文本视图，一行一条 */
+  .stream {
+    flex: 1; min-height: 0; overflow: hidden;
+    padding: 6px 10px;
+    font-family: var(--mono); font-size: 11.5px; line-height: 19px;
+    color: var(--subtext1);
+  }
+  .line { white-space: nowrap; overflow: hidden; }
+  .line .t { color: var(--overlay0); }
+  .line.more { color: var(--overlay0); }
+
+  /* 发送行：攒一行再发 */
+  .send {
+    flex: 0 0 26px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 10px;
+    background: #1b1b2b;
+    border-top: 1px solid var(--surface0);
+    font-family: var(--mono); font-size: 11px;
+  }
+  .send .pr { color: var(--green); }
+  .send .spacer { flex: 1; }
+  .cursor { display: inline-block; width: 7px; height: 14px; background: var(--subtext0); vertical-align: -3px; }
+  .tog { padding: 1px 7px; border-radius: 3px; border: 1px solid var(--surface0); color: var(--subtext0); font-size: 10.5px; }
+  .tog.on { border-color: var(--green); color: var(--green); background: rgba(166,227,161,.1); }
+  .send .hint { color: var(--overlay0); font-size: 10.5px; }
+</style>
+</head>
+<body>
+
+  <div class="pane picked">
+    <div class="pane-head">
+      <span class="tag">SER</span>
+      <span class="pick" id="pick">/dev/ttyUSB0 <i>▾</i></span>
+      <span class="params">115200 · 8N1 · 无流控</span>
+      <span class="spacer"></span>
+      <span class="state"><span class="dot"></span>已连接</span>
+    </div>
+
+    <!-- 下拉：扫描到的串口 -->
+    <div class="drop">
+      <div class="drop-head">
+        <span>扫描到的串口</span>
+        <span class="spacer"></span>
+        <span>6 个</span>
+        <span>r 重新扫描</span>
+      </div>
+      <div class="ports">
+
+        <div class="port">
+          <div class="row">
+            <span class="caret">▸</span>
+            <span class="dev">/dev/ttyUSB0</span>
+            <span class="chip">CH340</span>
+            <span class="desc">USB 转串口</span>
+            <span class="spacer"></span>
+            <span class="on">已连接</span>
+            <span class="id">1a86:7523</span>
+          </div>
+          <div class="detail">
+            <div class="kv"><span>驱动 <b>ch341-uart</b></span><span>序列号 <b>—</b></span><span>USB 位置 <b>1-3.2</b></span></div>
+            <div class="sep"></div>
+            <div class="opts">
+              <span class="k">连接参数</span>
+              <span class="k">波特率</span>
+              <span class="opt">9600</span><span class="opt on">115200</span><span class="opt">921600</span>
+              <span class="k">数据位</span><span class="fix">8</span>
+              <span class="k">校验</span><span class="fix">无</span>
+              <span class="k">停止位</span><span class="fix">1</span>
+              <span class="k">流控</span><span class="fix">无</span>
+              <span class="spacer"></span>
+              <span class="btn off">已连接</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="port open">
+          <div class="row">
+            <span class="caret">▾</span>
+            <span class="dev">/dev/ttyUSB1</span>
+            <span class="chip">CP2102</span>
+            <span class="desc">USB 转串口</span>
+            <span class="spacer"></span>
+            <span class="id">10c4:ea60</span>
+          </div>
+          <div class="detail">
+            <div class="kv"><span>驱动 <b>cp210x</b></span><span>序列号 <b>0001</b></span><span>USB 位置 <b>1-4</b></span></div>
+            <div class="sep"></div>
+            <div class="opts">
+              <span class="k">连接参数</span>
+              <span class="k">波特率</span>
+              <span class="opt">9600</span><span class="opt on">115200</span><span class="opt">921600</span>
+              <span class="k">数据位</span><span class="fix">8</span>
+              <span class="k">校验</span><span class="fix">无</span>
+              <span class="k">停止位</span><span class="fix">1</span>
+              <span class="k">流控</span><span class="fix">无</span>
+              <span class="spacer"></span>
+              <span class="btn">连接</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="port">
+          <div class="row">
+            <span class="caret">▸</span>
+            <span class="dev">/dev/ttyUSB2</span>
+            <span class="chip">FT232R</span>
+            <span class="desc">USB 转串口</span>
+            <span class="spacer"></span>
+            <span class="id">0403:6001</span>
+          </div>
+          <div class="detail">
+            <div class="kv"><span>驱动 <b>ftdi_sio</b></span><span>序列号 <b>A50285BI</b></span><span>USB 位置 <b>1-2</b></span></div>
+            <div class="sep"></div>
+            <div class="opts">
+              <span class="k">连接参数</span>
+              <span class="k">波特率</span>
+              <span class="opt">9600</span><span class="opt on">115200</span><span class="opt">921600</span>
+              <span class="k">数据位</span><span class="fix">8</span>
+              <span class="k">校验</span><span class="fix">无</span>
+              <span class="k">停止位</span><span class="fix">1</span>
+              <span class="k">流控</span><span class="fix">无</span>
+              <span class="spacer"></span>
+              <span class="btn">连接</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="port">
+          <div class="row">
+            <span class="caret">▸</span>
+            <span class="dev">/dev/ttyUSB3</span>
+            <span class="chip">PL2303</span>
+            <span class="desc">USB 转串口</span>
+            <span class="spacer"></span>
+            <span class="id">067b:2303</span>
+          </div>
+          <div class="detail">
+            <div class="kv"><span>驱动 <b>pl2303</b></span><span>序列号 <b>—</b></span><span>USB 位置 <b>1-5</b></span></div>
+            <div class="sep"></div>
+            <div class="opts">
+              <span class="k">连接参数</span>
+              <span class="k">波特率</span>
+              <span class="opt">9600</span><span class="opt on">115200</span><span class="opt">921600</span>
+              <span class="k">数据位</span><span class="fix">8</span>
+              <span class="k">校验</span><span class="fix">无</span>
+              <span class="k">停止位</span><span class="fix">1</span>
+              <span class="k">流控</span><span class="fix">无</span>
+              <span class="spacer"></span>
+              <span class="btn">连接</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="port">
+          <div class="row">
+            <span class="caret">▸</span>
+            <span class="dev">/dev/ttyACM0</span>
+            <span class="chip">USB Serial/JTAG</span>
+            <span class="desc">ESP32-S3 原生</span>
+            <span class="spacer"></span>
+            <span class="id">303a:1001</span>
+          </div>
+          <div class="detail">
+            <div class="kv"><span>驱动 <b>cdc_acm</b></span><span>序列号 <b>—</b></span><span>USB 位置 <b>1-1</b></span></div>
+            <div class="sep"></div>
+            <div class="opts">
+              <span class="k">连接参数</span>
+              <span class="k">波特率</span>
+              <span class="opt">9600</span><span class="opt on">115200</span><span class="opt">921600</span>
+              <span class="k">数据位</span><span class="fix">8</span>
+              <span class="k">校验</span><span class="fix">无</span>
+              <span class="k">停止位</span><span class="fix">1</span>
+              <span class="k">流控</span><span class="fix">无</span>
+              <span class="spacer"></span>
+              <span class="btn">连接</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="port">
+          <div class="row">
+            <span class="caret">▸</span>
+            <span class="dev">/dev/ttyACM1</span>
+            <span class="chip">CDC ACM</span>
+            <span class="desc">单片机虚拟串口</span>
+            <span class="spacer"></span>
+            <span class="occ">占用中 · pid 41288</span>
+            <span class="id">0483:5740</span>
+          </div>
+          <div class="detail">
+            <div class="kv"><span>驱动 <b>cdc_acm</b></span><span>序列号 <b>—</b></span><span>USB 位置 <b>2-1.3</b></span></div>
+            <div class="sep"></div>
+            <div class="opts">
+              <span class="k">连接参数</span>
+              <span class="k">波特率</span>
+              <span class="opt">9600</span><span class="opt on">115200</span><span class="opt">921600</span>
+              <span class="k">数据位</span><span class="fix">8</span>
+              <span class="k">校验</span><span class="fix">无</span>
+              <span class="k">停止位</span><span class="fix">1</span>
+              <span class="k">流控</span><span class="fix">无</span>
+              <span class="spacer"></span>
+              <span class="btn off">被占用</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 统计条 -->
+    <div class="stats">
+      <span>RX <b>13.8 KB</b></span>
+      <span>TX <b>64 B</b></span>
+      <span>错误 <b>0</b></span>
+      <span class="spacer"></span>
+      <span>帧率 <b>50/s</b> · 空闲 2ms 切帧</span>
+      <span class="view"><span class="on">文本</span><span>HEX</span></span>
+    </div>
+
+    <!-- 数据区 -->
+    <div class="stream">
+      <div class="line more">… 已滚过 404 行</div>
+      <div class="line"><span class="t">09:41:07.000</span>  tick 4000ms  heap 180KB</div>
+      <div class="line"><span class="t">09:41:07.020</span>  adc ch0=1019 ch1=515</div>
+      <div class="line"><span class="t">09:41:07.040</span>  adc ch0=1020 ch1=513</div>
+      <div class="line"><span class="t">09:41:07.060</span>  adc ch0=1017 ch1=516</div>
+      <div class="line"><span class="t">09:41:07.080</span>  adc ch0=1019 ch1=514</div>
+      <div class="line"><span class="t">09:41:07.100</span>  adc ch0=1021 ch1=512</div>
+      <div class="line"><span class="t">09:41:07.120</span>  adc ch0=1018 ch1=515</div>
+      <div class="line"><span class="t">09:41:07.140</span>  adc ch0=1020 ch1=513</div>
+    </div>
+
+    <!-- 发送行 -->
+    <div class="send">
+      <span class="pr">&gt;</span>
+      <span>temp=25.4</span><span class="cursor"></span>
+      <span class="spacer"></span>
+      <span class="tog">HEX 发送</span>
+      <span class="tog on">CR LF</span>
+      <span class="hint">Enter 发送</span>
+    </div>
+  </div>
+
+<script>
+  /* 点标题栏的设备名：开合下拉 */
+  document.getElementById('pick').addEventListener('click', () => {
+    document.querySelector('.pane').classList.toggle('picked');
+  });
+  /* 点列表里的一行：展开它的详情，同时收起上一行 */
+  document.querySelectorAll('.port').forEach((port) => {
+    port.querySelector('.row').addEventListener('click', () => {
+      const wasOpen = port.classList.contains('open');
+      document.querySelectorAll('.port').forEach((other) => {
+        other.classList.remove('open');
+        other.querySelector('.caret').textContent = '▸';
+      });
+      if (!wasOpen) {
+        port.classList.add('open');
+        port.querySelector('.caret').textContent = '▾';
+      }
+    });
+  });
+</script>
+
+</body>
+</html>
