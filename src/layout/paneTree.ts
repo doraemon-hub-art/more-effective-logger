@@ -34,6 +34,19 @@ export interface SplitNode {
 
 export type PaneNode = PaneLeaf | SplitNode;
 
+/** Where a split sits in the tree: one step per level, 0 = first half, 1 = second. */
+export type BranchPath = number[];
+
+/** Ratios stay off the ends, so neither half of a split can collapse to nothing. */
+export const MIN_RATIO = 0.05;
+export const MAX_RATIO = 0.95;
+
+/** Keep a ratio usable; anything that is not a finite number falls back to an even split. */
+export function clampRatio(ratio: number): number {
+  if (!Number.isFinite(ratio)) return 0.5;
+  return Math.min(Math.max(ratio, MIN_RATIO), MAX_RATIO);
+}
+
 /** Unique pane id; also the id the terminal session is registered under. */
 export function newPaneId(): string {
   return `pane-${Math.random().toString(36).slice(2, 8)}`;
@@ -95,4 +108,23 @@ export function splitPane(node: PaneNode, targetId: string, dir: SplitDir, fresh
     first: splitPane(node.first, targetId, dir, fresh),
     second: splitPane(node.second, targetId, dir, fresh),
   };
+}
+
+/**
+ * Move the divider of the split at `path`: the root itself for [], otherwise one step
+ * per level (0 = first half). Rebuilds the nodes along the path only, so panes keep
+ * their identity — a box changes, nothing is remounted, no shell is killed. Unknown
+ * paths, and a ratio that changes nothing, give the tree back untouched.
+ */
+export function setSplitRatio(node: PaneNode, path: BranchPath, ratio: number): PaneNode {
+  if (node.kind === "pane") return node;
+  if (path.length === 0) {
+    const next = clampRatio(ratio);
+    return next === node.ratio ? node : { ...node, ratio: next };
+  }
+  const [step, ...rest] = path;
+  const child = step === 0 ? node.first : node.second;
+  const moved = setSplitRatio(child, rest, ratio);
+  if (moved === child) return node;
+  return step === 0 ? { ...node, first: moved } : { ...node, second: moved };
 }

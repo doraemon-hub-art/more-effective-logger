@@ -30,7 +30,9 @@ import {
   createPane,
   createTermPane,
   leafIds,
+  setSplitRatio,
   splitPane,
+  type BranchPath,
   type PaneNode,
   type PaneType,
   type SplitDir,
@@ -121,6 +123,17 @@ function App() {
       list.map(page => (page.id === pageId ? { ...page, tree: splitPane(page.tree, paneId, dir, fresh) } : page)),
     );
     setFocusByPage(current => ({ ...current, [pageId]: fresh.id }));
+  };
+
+  /** A divider was dragged: rewrite that one ratio. Panes keep their identity. */
+  const resizeSplit = (pageId: string, path: BranchPath, ratio: number) => {
+    setPages(list =>
+      list.map(page => {
+        if (page.id !== pageId) return page;
+        const tree = setSplitRatio(page.tree, path, ratio);
+        return tree === page.tree ? page : { ...page, tree };
+      }),
+    );
   };
 
   const reportPaneStatus = (paneId: string, status: TerminalStatus) => {
@@ -228,6 +241,7 @@ function App() {
                 onPaneContextMenu={(event: MouseEvent, paneId: string) =>
                   setMenu({ x: event.clientX, y: event.clientY, pageId: page.id, paneId })
                 }
+                onResizeSplit={(path, ratio) => resizeSplit(page.id, path, ratio)}
                 renderPane={(pane, isFocused) =>
                   pane.type === "serial" ? (
                     <SerialPane paneId={pane.id} focused={isFocused} onLabel={reportPaneLabel} />

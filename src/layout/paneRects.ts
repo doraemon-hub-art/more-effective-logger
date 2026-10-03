@@ -8,7 +8,7 @@
  * Percentages on purpose: the boxes then follow the window size for free, and a
  * split is nothing but new numbers — no DOM rearranging, so panes never remount.
  */
-import type { PaneNode } from "./paneTree";
+import { clampRatio, type BranchPath, type PaneNode, type SplitDir } from "./paneTree";
 
 /** Position and size of one pane, as percentages of the layout container. */
 export interface PaneBox {
@@ -18,29 +18,62 @@ export interface PaneBox {
   height: number;
 }
 
-/** Walk the tree, halving the box until every leaf has one. */
-function walk(node: PaneNode, box: PaneBox, out: Map<string, PaneBox>) {
+/** A draggable boundary: which split it moves, and where its bar sits. */
+export interface SplitBox {
+  /** The split this bar belongs to: steps from the root, 0 = first half. */
+  path: BranchPath;
+  /** "row" splits left|right, so its bar is a vertical line. */
+  dir: SplitDir;
+  /** Box of the whole split node, in percent of the container. */
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  /** The line inside that box: an x for a row split, a y for a column split. */
+  line: number;
+}
+
+/** The whole container, as a box. */
+const ROOT: PaneBox = { left: 0, top: 0, width: 100, height: 100 };
+
+/** Walk the tree, halving the box until every leaf has one; collect the dividers too. */
+function walk(node: PaneNode, box: PaneBox, boxes: Map<string, PaneBox>, splits: SplitBox[], path: BranchPath) {
   if (node.kind === "pane") {
-    out.set(node.id, box);
+    boxes.set(node.id, box);
     return;
   }
-  const ratio = Math.min(Math.max(node.ratio, 0.05), 0.95);
+  const ratio = clampRatio(node.ratio);
   if (node.dir === "row") {
     const firstWidth = box.width * ratio;
-    walk(node.first, { ...box, width: firstWidth }, out);
-    walk(node.second, { ...box, left: box.left + firstWidth, width: box.width - firstWidth }, out);
+    splits.push({ path, dir: node.dir, ...box, line: box.left + firstWidth });
+    walk(node.first, { ...box, width: firstWidth }, boxes, splits, [...path, 0]);
+    walk(node.second, { ...box, left: box.left + firstWidth, width: box.width - firstWidth }, boxes, splits, [
+      ...path,
+      1,
+    ]);
   } else {
     const firstHeight = box.height * ratio;
-    walk(node.first, { ...box, height: firstHeight }, out);
-    walk(node.second, { ...box, top: box.top + firstHeight, height: box.height - firstHeight }, out);
+    splits.push({ path, dir: node.dir, ...box, line: box.top + firstHeight });
+    walk(node.first, { ...box, height: firstHeight }, boxes, splits, [...path, 0]);
+    walk(node.second, { ...box, top: box.top + firstHeight, height: box.height - firstHeight }, boxes, splits, [
+      ...path,
+      1,
+    ]);
   }
 }
 
 /** Boxes of every pane in the tree, keyed by pane id. */
 export function paneBoxes(tree: PaneNode): Map<string, PaneBox> {
   const boxes = new Map<string, PaneBox>();
-  walk(tree, { left: 0, top: 0, width: 100, height: 100 }, boxes);
+  walk(tree, ROOT, boxes, [], []);
   return boxes;
+}
+
+/** Every divider in the tree, outermost first. */
+export function splitBoxes(tree: PaneNode): SplitBox[] {
+  const splits: SplitBox[] = [];
+  walk(tree, ROOT, new Map(), splits, []);
+  return splits;
 }
 
 /** Where a focus move goes. */

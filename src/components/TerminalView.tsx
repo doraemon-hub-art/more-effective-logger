@@ -8,7 +8,7 @@
  * Wiring: xterm.js renders and collects keystrokes, the Rust side owns the pty.
  *   keys   -> term.onData      -> pty_input
  *   output -> pty-output event -> term.write
- *   size   -> ResizeObserver   -> pty_resize
+ *   size   -> ResizeObserver   -> pty_resize (once the box settles)
  *   spawn  -> spawn_terminal on mount, pty_kill on unmount
  *
  * The widget deliberately knows nothing about the pane chrome: the parent gives
@@ -47,6 +47,13 @@ const TERM_THEME = {
   brightCyan: "#89dceb",
   brightWhite: "#a6adc8",
 };
+
+/**
+ * How long the box has to hold still before the shell is told about a new size.
+ * Dragging a divider resizes the box every frame; the screen follows at once, but
+ * the shell only needs the size it ends up with (a resize costs a SIGWINCH redraw).
+ */
+const RESIZE_SETTLE_MS = 60;
 
 /** Everything the widget knows about its shell. */
 export interface TerminalStatus {
@@ -148,6 +155,7 @@ function TerminalView({ id, onStatus, onExit, focused, className }: TerminalView
     const listeners: Array<() => void> = [];
     let disposed = false;
     let live = false;
+    let resizeTimer = 0;
 
     // Shell output -> screen.
     void (async () => {
@@ -177,7 +185,12 @@ function TerminalView({ id, onStatus, onExit, focused, className }: TerminalView
       if (host.clientWidth === 0 || host.clientHeight === 0) return;
       fit.fit();
       report({ cols: term.cols, rows: term.rows });
-      if (live) void invoke("pty_resize", { id: sessionId, cols: term.cols, rows: term.rows });
+      // The screen is already the new size; the shell is told once the box settles.
+      if (!live) return;
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        void invoke("pty_resize", { id: sessionId, cols: term.cols, rows: term.rows });
+      }, RESIZE_SETTLE_MS);
     });
     observer.observe(host);
 
@@ -227,6 +240,7 @@ function TerminalView({ id, onStatus, onExit, focused, className }: TerminalView
     return () => {
       disposed = true;
       window.clearInterval(cwdTimer);
+      window.clearTimeout(resizeTimer);
       observer.disconnect();
       listeners.forEach(off => off());
       void invoke("pty_kill", { id: sessionId });
