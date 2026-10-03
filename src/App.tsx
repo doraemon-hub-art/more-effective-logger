@@ -23,13 +23,16 @@ import SerialPane from "./components/SerialPane";
 import { type TerminalStatus } from "./components/TerminalView";
 import StatusBar, { type SysStats } from "./components/StatusBar";
 import ContextMenu, { type MenuItem } from "./components/ContextMenu";
+import PaneTypeMenu from "./components/PaneTypeMenu";
 import TopBar, { type PageCell } from "./components/TopBar";
+import SettingsPage, { BASE_FONT_SIZE, DEFAULT_SETTINGS, type AppSettings } from "./components/SettingsPage";
 import Layout from "./layout/Layout";
 import {
   columnCount,
   createPane,
   createTermPane,
   leafIds,
+  removePane,
   setSplitRatio,
   splitPane,
   type BranchPath,
@@ -37,14 +40,15 @@ import {
   type PaneType,
   type SplitDir,
 } from "./layout/paneTree";
-import { neighborInDirection, paneBoxes, type Direction } from "./layout/paneRects";
+import { neighborInDirection, paneBoxes, type Direction, type PaneBox } from "./layout/paneRects";
 
-/** One workspace: a pane tree plus a title. */
-interface Page {
-  id: string;
-  title: string;
-  tree: PaneNode;
-}
+/**
+ * A page is either a workspace (its own pane tree, its own focus) or the settings page.
+ * The settings page holds no panes, so it carries no tree — which is also what keeps it
+ * out of everything that works on panes.
+ */
+type Page =
+  { id: string; title: string; kind: "workspace"; tree: PaneNode } | { id: string; title: string; kind: "settings" };
 
 /** Where a context menu is open, and which pane of which page it belongs to. */
 interface MenuState {
@@ -52,6 +56,18 @@ interface MenuState {
   y: number;
   pageId: string;
   paneId: string;
+}
+
+/**
+ * A keyboard split in progress: the direction is fixed (it came from the arrow), the
+ * menu only picks what the new half will be.
+ */
+interface SplitMenuState {
+  pageId: string;
+  paneId: string;
+  dir: SplitDir;
+  x: number;
+  y: number;
 }
 
 function newPageId(): string {
@@ -68,19 +84,27 @@ const ARROW_DIRECTION: Record<string, Direction | undefined> = {
 
 function App() {
   const [stats, setStats] = useState<SysStats | null>(null);
-  const [pages, setPages] = useState<Page[]>(() => [{ id: newPageId(), title: "页 1", tree: createTermPane() }]);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [pages, setPages] = useState<Page[]>(() => [
+    { id: newPageId(), title: "页 1", kind: "workspace", tree: createTermPane() },
+  ]);
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [focusByPage, setFocusByPage] = useState<Record<string, string | null>>({});
   const [paneStatus, setPaneStatus] = useState<Record<string, TerminalStatus>>({});
   /** Non-terminal panes describe themselves (serial: device + rate). */
   const [paneLabel, setPaneLabel] = useState<Record<string, string>>({});
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [splitMenu, setSplitMenu] = useState<SplitMenuState | null>(null);
   const titleSeq = useRef(1);
 
   const activePage = pages.find(page => page.id === activePageId) ?? pages[0];
-  const activeIds = useMemo(() => leafIds(activePage.tree), [activePage.tree]);
-  const columns = useMemo(() => columnCount(activePage.tree), [activePage.tree]);
-  const boxes = useMemo(() => paneBoxes(activePage.tree), [activePage.tree]);
+  /** The settings page, when it is open at all; there is never more than one. */
+  const settingsPage = pages.find(page => page.kind === "settings");
+  // Only a workspace has boxes to reason about; the settings page has no panes at all.
+  const activeTree = activePage.kind === "workspace" ? activePage.tree : null;
+  const activeIds = useMemo(() => (activeTree ? leafIds(activeTree) : []), [activeTree]);
+  const columns = useMemo(() => (activeTree ? columnCount(activeTree) : 0), [activeTree]);
+  const boxes = useMemo(() => (activeTree ? paneBoxes(activeTree) : new Map<string, PaneBox>()), [activeTree]);
   // Focus follows clicks, new panes and keyboard moves; the first pane is the fallback.
   const focusedPane = focusByPage[activePage.id] ?? null;
   const activePaneId = focusedPane && activeIds.includes(focusedPane) ? focusedPane : (activeIds[0] ?? null);
@@ -96,11 +120,34 @@ function App() {
     const page: Page = {
       id: newPageId(),
       title: `页 ${titleSeq.current + 1}`,
+      kind: "workspace",
       tree: createTermPane(),
     };
     titleSeq.current += 1;
     setPages(list => [...list, page]);
     setActivePageId(page.id);
+  };
+
+  /** The settings page writes through here; the app is the only owner of the values. */
+  const updateSettings = (patch: Partial<AppSettings>) => setSettings(current => ({ ...current, ...patch }));
+
+  /**
+   * The settings page is a page, so opening it makes one — but only ever one: asking
+   * again just switches to the one that is already there.
+   */
+  const openSettings = () => {
+    if (settingsPage) {
+      setActivePageId(settingsPage.id);
+      return;
+    }
+    const page: Page = { id: newPageId(), title: "系统设置", kind: "settings" };
+    setPages(list => [...list, page]);
+    setActivePageId(page.id);
+  };
+
+  /** Closing it is closing a page: the same rules apply, the same keys work. */
+  const closeSettings = () => {
+    if (settingsPage) closePage(settingsPage.id);
   };
 
   const closePage = (pageId: string) => {
@@ -120,16 +167,80 @@ function App() {
   const split = (pageId: string, paneId: string, dir: SplitDir, type: PaneType) => {
     const fresh = createPane(type);
     setPages(list =>
-      list.map(page => (page.id === pageId ? { ...page, tree: splitPane(page.tree, paneId, dir, fresh) } : page)),
+      list.map(page =>
+        page.id === pageId && page.kind === "workspace"
+          ? { ...page, tree: splitPane(page.tree, paneId, dir, fresh) }
+          : page,
+      ),
     );
     setFocusByPage(current => ({ ...current, [pageId]: fresh.id }));
+  };
+
+  /**
+   * Ctrl+Shift+Q: take the focused pane out. Its sibling takes the split's place, and
+   * the shell dies with the pane (the component unmounts and closes the session).
+   */
+  const closePane = (pageId: string, paneId: string) => {
+    setPages(list =>
+      list.map(page => {
+        if (page.id !== pageId || page.kind !== "workspace") return page;
+        const result = removePane(page.tree, paneId);
+        return result.removed ? { ...page, tree: result.tree } : page;
+      }),
+    );
+    // Focus falls to whatever the page's first pane is after the removal.
+    setFocusByPage(current => {
+      const kept = { ...current };
+      delete kept[paneId];
+      return kept;
+    });
+  };
+
+  /**
+   * Ctrl+Shift+arrow pressed: open the type picker at the spot where the new half will
+   * land — to the right of the pane for a row split, below it for a column split.
+   */
+  const startSplit = (pageId: string, paneId: string, dir: SplitDir) => {
+    const box = boxes.get(paneId);
+    if (!box) return;
+    const area = document.querySelector(".relative.min-h-0.flex-1")?.getBoundingClientRect();
+    if (!area) return;
+    // Percentages are of the pane area; the menu sits inside the new half, not on it.
+    const x = area.left + (area.width * (box.left + box.width * (dir === "row" ? 0.75 : 0.5))) / 100;
+    const y = area.top + (area.height * (box.top + box.height * (dir === "row" ? 0.5 : 0.75))) / 100;
+    setSplitMenu({ pageId, paneId, dir, x, y });
+  };
+
+  /**
+   * A keyboard split was confirmed: same path as the context menu's split.
+   */
+  const confirmSplit = (state: SplitMenuState, type: PaneType) => {
+    split(state.pageId, state.paneId, state.dir, type);
+    setSplitMenu(null);
+  };
+
+  const [zoomByPane, setZoomByPane] = useState<Record<string, number>>({});
+
+  /** Effective terminal font size of the focused pane: settings base × pane zoom. */
+  const focusedFontSize = (activePaneId ? (zoomByPane[activePaneId] ?? 1) : 1) * settings.fontSize;
+
+  /**
+   * Ctrl+= / Ctrl+- : zoom the focused terminal pane; Ctrl+0: back to the base size.
+   * Zoom is per pane and dies with it. The step is a multiplication so repeated keys
+   * keep feeling even, and both ends are hard stops.
+   */
+  const zoomPane = (paneId: string, factor: number) => {
+    setZoomByPane(current => {
+      const next = Math.min(Math.max((current[paneId] ?? 1) * factor, 0.5), 2);
+      return next === 1 ? { ...current, [paneId]: 1 } : { ...current, [paneId]: next };
+    });
   };
 
   /** A divider was dragged: rewrite that one ratio. Panes keep their identity. */
   const resizeSplit = (pageId: string, path: BranchPath, ratio: number) => {
     setPages(list =>
       list.map(page => {
-        if (page.id !== pageId) return page;
+        if (page.id !== pageId || page.kind !== "workspace") return page;
         const tree = setSplitRatio(page.tree, path, ratio);
         return tree === page.tree ? page : { ...page, tree };
       }),
@@ -156,8 +267,28 @@ function App() {
   // capture phase matters — the focused terminal would otherwise swallow the combo.
   // Only the combinations claimed here are taken; everything else (Ctrl+C, Ctrl+D,
   // Alt+<letter>, ...) stays with the shell.
-  const actions = useRef({ addPage, closePage, switchPage, movePaneFocus, activePageId: activePage.id });
-  actions.current = { addPage, closePage, switchPage, movePaneFocus, activePageId: activePage.id };
+  const actions = useRef({
+    addPage,
+    closePage,
+    switchPage,
+    movePaneFocus,
+    closePane,
+    startSplit,
+    zoomPane,
+    activePageId: activePage.id,
+    activePaneId,
+  });
+  actions.current = {
+    addPage,
+    closePage,
+    switchPage,
+    movePaneFocus,
+    closePane,
+    startSplit,
+    zoomPane,
+    activePageId: activePage.id,
+    activePaneId,
+  };
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
@@ -175,9 +306,38 @@ function App() {
         else if (key === "pagedown") handle(() => actions.current.switchPage(1));
         return;
       }
-      if (!event.ctrlKey || event.altKey || event.metaKey) return;
-      if (event.shiftKey && key === "t") handle(() => actions.current.addPage());
-      else if (event.shiftKey && key === "w") handle(() => actions.current.closePage(actions.current.activePageId));
+      if (!event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+      // Ctrl+= / Ctrl+- / Ctrl+0: zoom the focused terminal pane. The physical plus key
+      // sends "=", so both spellings are taken.
+      if (key === "=" || key === "+") {
+        const paneId = actions.current.activePaneId;
+        if (paneId) handle(() => actions.current.zoomPane(paneId, 1.1));
+        return;
+      }
+      if (key === "-") {
+        const paneId = actions.current.activePaneId;
+        if (paneId) handle(() => actions.current.zoomPane(paneId, 1 / 1.1));
+        return;
+      }
+      if (key === "0") {
+        const paneId = actions.current.activePaneId;
+        if (paneId) handle(() => actions.current.zoomPane(paneId, 0));
+        return;
+      }
+      if (!event.shiftKey) return;
+      // Ctrl+Shift+arrows: split the focused pane. The menu lands where the new half
+      // will appear — to the right / below the divider.
+      const dir = ARROW_DIRECTION[key];
+      if (dir === "right" || dir === "down") {
+        const { activePageId: pageId, activePaneId: paneId, startSplit: begin } = actions.current;
+        if (pageId && paneId) begin(pageId, paneId, dir === "right" ? "row" : "col");
+        return;
+      }
+      if (key === "q") {
+        const { activePageId: pageId, activePaneId: paneId } = actions.current;
+        if (pageId && paneId) handle(() => actions.current.closePane(pageId, paneId));
+      } else if (key === "t") handle(() => actions.current.addPage());
+      else if (key === "w") handle(() => actions.current.closePage(actions.current.activePageId));
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
@@ -185,6 +345,9 @@ function App() {
 
   // Top bar: one cell per page, showing what that page's focused pane is.
   const pageCells: PageCell[] = pages.map(page => {
+    if (page.kind === "settings") {
+      return { id: page.id, title: page.title, geometry: null, active: page.id === activePage.id };
+    }
     const ids = leafIds(page.tree);
     const pageFocus = focusByPage[page.id] ?? null;
     const paneId = pageFocus && ids.includes(pageFocus) ? pageFocus : (ids[0] ?? null);
@@ -194,7 +357,7 @@ function App() {
     return {
       id: page.id,
       title: status?.running ? `${status.user}@${status.host}: ${status.cwd ?? "…"}` : (label ?? "…"),
-      geometry: status?.cols ? `${status.cols}×${status.rows}` : "—",
+      geometry: status?.cols ? `${status.cols}×${status.rows}` : null,
       active: page.id === activePage.id,
     };
   });
@@ -215,16 +378,31 @@ function App() {
             { label: "串口", onSelect: () => split(menu.pageId, menu.paneId, "col", "serial") },
           ],
         },
+        // The last entry flips once the settings page exists: there is no point offering
+        // to open what is already open, and closing it belongs on the same menu.
+        settingsPage ? { label: "关闭设置", onSelect: closeSettings } : { label: "系统设置", onSelect: openSettings },
       ]
     : [];
 
   return (
     <div className="flex h-screen flex-col bg-crust">
-      <TopBar cells={pageCells} onSelectPage={setActivePageId} />
+      <TopBar cells={pageCells} onSelectPage={setActivePageId} onClosePage={closePage} />
 
       {/* pane area: grows to fill whatever the status bar leaves */}
       <div className="relative min-h-0 flex-1 p-1">
         {pages.map(page => {
+          // The settings page has no panes: it draws itself and is otherwise untouched.
+          if (page.kind === "settings") {
+            return (
+              <div
+                key={page.id}
+                className="absolute inset-0 flex p-16"
+                style={{ display: page.id === activePage.id ? "block" : "none" }}
+              >
+                <SettingsPage settings={settings} onChange={updateSettings} />
+              </div>
+            );
+          }
           const ids = leafIds(page.tree);
           const pageFocus = focusByPage[page.id] ?? null;
           const pageActiveId = pageFocus && ids.includes(pageFocus) ? pageFocus : (ids[0] ?? null);
@@ -246,7 +424,12 @@ function App() {
                   pane.type === "serial" ? (
                     <SerialPane paneId={pane.id} focused={isFocused} onLabel={reportPaneLabel} />
                   ) : (
-                    <TermPane paneId={pane.id} focused={isFocused} onStatus={reportPaneStatus} />
+                    <TermPane
+                      paneId={pane.id}
+                      focused={isFocused}
+                      fontSize={settings.fontSize * (zoomByPane[pane.id] ?? 1)}
+                      onStatus={reportPaneStatus}
+                    />
                   )
                 }
               />
@@ -255,8 +438,21 @@ function App() {
         })}
       </div>
 
-      <StatusBar stats={stats} columns={columns} panes={activeIds.length} />
+      <StatusBar
+        stats={stats}
+        columns={columns}
+        panes={activeIds.length}
+        fontSizePercent={Math.round((focusedFontSize / BASE_FONT_SIZE) * 100)}
+      />
       {menu ? <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} /> : null}
+      {splitMenu ? (
+        <PaneTypeMenu
+          x={splitMenu.x}
+          y={splitMenu.y}
+          onPick={type => confirmSplit(splitMenu, type)}
+          onCancel={() => setSplitMenu(null)}
+        />
+      ) : null}
     </div>
   );
 }

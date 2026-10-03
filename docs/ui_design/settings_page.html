@@ -1,0 +1,382 @@
+<!--
+ * @file settings_page.html
+ * @brief Concept mock of the melogger settings page. The settings page is a page of its own —
+ *        it takes a cell in the top strip next to the workspace pages and is reached from the
+ *        pane context menu (系统设置). Left: a menu that jumps to a category (界面 / 终端 / 串口 /
+ *        快捷键), plus the config file the values really live in; right: every category in one
+ *        scrolling column, the menu following along. The font size is one global value (the
+ *        terminals follow it), so no pane type has a font of its own. Bottom = the usual status
+ *        bar, whose font figure is a plain readout, not an entrance.
+ * @author doraemon-hub-art <1660219734@qq.com>
+ * @date 2026-10-03
+ * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>melogger — 系统设置页面概念图</title>
+<style>
+  :root {
+    /* Catppuccin Mocha */
+    --crust:   #11111b;
+    --mantle:  #181825;
+    --base:    #1e1e2e;
+    --surface0:#313244;
+    --surface1:#45475a;
+    --overlay0:#6c7086;
+    --overlay1:#7f849c;
+    --subtext0:#a6adc8;
+    --subtext1:#bac2de;
+    --text:    #cdd6f4;
+    --blue:    #89b4fa;
+    --mauve:   #cba6f7;
+    --sky:     #89dceb;
+    --green:   #a6e3a1;
+    --yellow:  #f9e2af;
+    --red:     #f38ba8;
+
+    --ui: "Noto Sans CJK SC", "Source Han Sans SC", "Ubuntu", sans-serif;
+    --mono: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Noto Sans Mono CJK SC", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+  body {
+    background: var(--crust);
+    font-family: var(--ui);
+    color: var(--text);
+    padding: 20px;
+    height: 100vh;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- 窗口外壳：跟主页面同一套 ---------- */
+  .frame {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--base);
+    border: 1px solid var(--surface0);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 18px 50px rgba(0,0,0,.55);
+  }
+
+  /* ---------- 顶部条：一格一个页面，设置页是其中一格 ---------- */
+  .titlebar {
+    flex: 0 0 34px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    background: var(--crust);
+    border-bottom: 1px solid var(--surface0);
+    align-items: stretch;
+  }
+  .seg {
+    display: flex; align-items: center; gap: 8px;
+    min-width: 0;
+    padding: 0 12px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--overlay0);
+    border-top: 2px solid transparent;
+    border-right: 1px solid rgba(49,50,68,.45);
+    white-space: nowrap;
+  }
+  .seg:last-child { border-right: none; }
+  .seg.active {
+    background: var(--base);
+    color: var(--text);
+    border-top-color: var(--blue);
+    border-bottom: 1px solid var(--base);
+    margin-bottom: -1px;
+  }
+  .seg .p { overflow: hidden; text-overflow: ellipsis; }
+  /* 类型标记：跟面板标题栏里的是同一个 */
+  .seg .tag {
+    flex: 0 0 auto;
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .5px;
+    padding: 1px 5px; border-radius: 3px;
+    background: rgba(137,180,250,.16); color: var(--blue);
+  }
+  /* 设置页不属任何面板类型，标记用中性色 */
+  .seg .tag.set { background: rgba(166,173,200,.14); color: var(--subtext0); }
+
+  .winbtn { display: flex; align-items: center; gap: 14px; margin-left: auto; padding-left: 12px; }
+  .winbtn i { width: 11px; height: 11px; border-radius: 50%; background: var(--surface1); display: block; }
+  .winbtn i.close { background: var(--red); opacity: .85; }
+
+  /* ---------- 工作区：左窄菜单 + 右内容 ---------- */
+  .workspace {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 168px 1fr;
+  }
+
+  .side {
+    display: flex;
+    flex-direction: column;
+    background: var(--mantle);
+    border-right: 1px solid var(--surface0);
+    padding: 6px 0;
+  }
+  .side a {
+    display: flex; align-items: center;
+    height: 30px;
+    padding: 0 12px;
+    font-size: 11.5px;
+    color: var(--overlay1);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    cursor: pointer;
+  }
+  .side a:hover { color: var(--subtext1); }
+  .side a.on {
+    background: var(--base);
+    color: var(--text);
+    border-left-color: var(--blue);
+  }
+  /* 内容：全部四组一页铺开往下滚，菜单跳转 */
+  .content {
+    min-width: 0;
+    overflow-y: auto;
+    padding: 12px 20px 24px;
+    scroll-behavior: smooth;
+  }
+  .stack { max-width: 620px; }
+
+  .group { margin-top: 20px; scroll-margin-top: 6px; }
+  .group:first-child { margin-top: 2px; }
+  /* 分组标题：整行做成一条高亮带，比正文的标签大一号、亮一档 */
+  .gt {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: .5px;
+    color: var(--text);
+    background: rgba(49,50,68,.45);
+    border-radius: 3px;
+    padding: 4px 8px;
+    margin-bottom: 2px;
+  }
+
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    height: 36px;
+    border-bottom: 1px solid rgba(49,50,68,.55);
+  }
+  .row:last-child { border-bottom: none; }
+  .lab { flex: 0 0 auto; font-size: 12px; color: var(--text); }
+  /* 说明内联在名字后面，不另开一行 */
+  .note { flex: 0 0 auto; font-family: var(--mono); font-size: 10.5px; color: var(--overlay0); }
+  .spacer { flex: 1; }
+  .ctl { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+
+  /* 取值控件：跟串口面板里那排波特率是同一个样子 */
+  .chip {
+    font-family: var(--mono); font-size: 11px;
+    padding: 2px 7px;
+    border: 1px solid var(--surface0);
+    border-radius: 3px;
+    color: var(--subtext0);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .chip:hover { border-color: var(--subtext0); color: var(--text); }
+  .chip.on { border-color: var(--green); background: rgba(166,227,161,.12); color: var(--green); }
+  .chip .dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    margin-right: 5px; vertical-align: -1px;
+    border: 1px solid rgba(0,0,0,.35);
+  }
+  /* 只读的键位 */
+  kbd {
+    font-family: var(--mono); font-size: 10.5px;
+    padding: 2px 5px;
+    border: 1px solid var(--surface0);
+    border-radius: 3px;
+    background: var(--surface0);
+    color: var(--text);
+  }
+  /* ---------- 状态栏：跟主页面同一行，字体那格是纯显示 ---------- */
+  .statusbar {
+    flex: 0 0 26px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 10px;
+    background: var(--mantle);
+    border-top: 1px solid var(--surface0);
+    font-family: var(--mono); font-size: 10.5px; color: var(--overlay1);
+  }
+  .statusbar > span { white-space: nowrap; flex: 0 0 auto; }
+  .statusbar .sp { flex: 1; }
+  .statusbar .m { display: flex; align-items: center; gap: 6px; }
+  .statusbar .k { color: var(--overlay0); letter-spacing: .5px; }
+  .statusbar .v { color: var(--subtext0); }
+  .statusbar .meter {
+    display: block; width: 46px; height: 4px; border-radius: 2px;
+    background: var(--surface0); overflow: hidden;
+  }
+  .statusbar .meter i { display: block; height: 100%; background: var(--green); }
+  .statusbar .mem .meter i { background: var(--sky); }
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <!-- 顶条：另一格是普通工作区页面，切页用 Alt+PageUp/PageDown -->
+  <div class="titlebar">
+    <div class="seg"><span class="tag">TERM</span><span class="p">dev@dev-box: ~</span></div>
+    <div class="seg active">
+      <span class="tag set">SET</span><span class="p">系统设置</span>
+      <span class="winbtn"><i></i><i></i><i class="close"></i></span>
+    </div>
+  </div>
+
+  <section class="workspace">
+
+    <nav class="side">
+      <a class="on" href="#gui">界面</a>
+      <a href="#term">终端</a>
+      <a href="#serial">串口</a>
+      <a href="#keys">快捷键</a>
+    </nav>
+
+    <div class="content">
+      <div class="stack">
+
+        <div class="group" id="gui">
+          <div class="gt">界面</div>
+          <div class="row">
+            <span class="lab">字体大小</span>
+            <span class="note">终端一并生效</span>
+            <span class="spacer"></span>
+            <span class="ctl">
+              <span class="chip">11.5 px</span>
+              <span class="chip on">12.5 px</span>
+              <span class="chip">14 px</span>
+            </span>
+          </div>
+          <div class="row">
+            <span class="lab">主题</span>
+            <span class="note">Catppuccin</span>
+            <span class="spacer"></span>
+            <span class="ctl">
+              <span class="chip on"><i class="dot" style="background:#1e1e2e"></i>Mocha</span>
+              <span class="chip"><i class="dot" style="background:#24273a"></i>Macchiato</span>
+              <span class="chip"><i class="dot" style="background:#303446"></i>Frappé</span>
+              <span class="chip"><i class="dot" style="background:#eff1f5"></i>Latte</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="group" id="term">
+          <div class="gt">终端</div>
+          <div class="row">
+            <span class="lab">光标闪烁</span>
+            <span class="spacer"></span>
+            <span class="ctl">
+              <span class="chip on">开</span>
+              <span class="chip">关</span>
+            </span>
+          </div>
+          <div class="row">
+            <span class="lab">回滚行数</span>
+            <span class="spacer"></span>
+            <span class="ctl">
+              <span class="chip">1000</span>
+              <span class="chip on">5000</span>
+              <span class="chip">20000</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="group" id="serial">
+          <div class="gt">串口</div>
+          <div class="row">
+            <span class="lab">默认波特率</span>
+            <span class="spacer"></span>
+            <span class="ctl">
+              <span class="chip">9600</span>
+              <span class="chip on">115200</span>
+              <span class="chip">921600</span>
+            </span>
+          </div>
+          <div class="row">
+            <span class="lab">切帧空闲</span>
+            <span class="note">线路静默超过这么久算一帧结束</span>
+            <span class="spacer"></span>
+            <span class="ctl">
+              <span class="chip on">2 ms</span>
+              <span class="chip">5 ms</span>
+              <span class="chip">10 ms</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="group" id="keys">
+          <div class="gt">快捷键</div>
+          <div class="row">
+            <span class="lab">新建页面</span>
+            <span class="spacer"></span>
+            <span class="ctl"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd></span>
+          </div>
+          <div class="row">
+            <span class="lab">关闭页面</span>
+            <span class="spacer"></span>
+            <span class="ctl"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>W</kbd></span>
+          </div>
+          <div class="row">
+            <span class="lab">面板焦点</span>
+            <span class="spacer"></span>
+            <span class="ctl"><kbd>Alt</kbd><kbd>←→↑↓</kbd></span>
+          </div>
+          <div class="row">
+            <span class="lab">切换页面</span>
+            <span class="spacer"></span>
+            <span class="ctl"><kbd>Alt</kbd><kbd>PageUp</kbd><kbd>PageDown</kbd></span>
+          </div>
+          <div class="row">
+            <span class="lab">打开设置</span>
+            <span class="note">面板右键</span>
+            <span class="spacer"></span>
+            <span class="ctl"><kbd>系统设置</kbd></span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </section>
+
+  <div class="statusbar">
+    <span class="m"><span class="k">CPU</span><span class="meter"><i style="width:23%"></i></span><span class="v">23%</span></span>
+    <span class="m"><span class="k">温度</span><span class="v">51°C</span></span>
+    <span class="m mem"><span class="k">内存</span><span class="meter"><i style="width:41%"></i></span><span class="v">41%</span><span class="k">6.4 / 15.6 GB</span></span>
+    <span class="m"><span class="k">开机</span><span class="v">3天 4:21</span></span>
+    <span class="m"><span class="k">运行</span><span class="v">2:31</span></span>
+    <span class="sp"></span>
+    <span>字体 100%</span>
+    <span>系统设置</span>
+  </div>
+</div>
+
+<script>
+  // 稿子里就这一段脚本：点菜单跳转，滚动时菜单跟着高亮（都是锚点，没有别的机制）
+  const links = Array.from(document.querySelectorAll(".side a"));
+  const content = document.querySelector(".content");
+  const setOn = link => links.forEach(a => a.classList.toggle("on", a === link));
+  const follow = () => {
+    const top = content.getBoundingClientRect().top;
+    let current = links[0];
+    links.forEach(link => {
+      const group = document.querySelector(link.getAttribute("href"));
+      if (group.getBoundingClientRect().top - top <= 16) current = link;
+    });
+    setOn(current);
+  };
+  links.forEach(link => link.addEventListener("click", () => setOn(link)));
+  content.addEventListener("scroll", follow);
+</script>
+</body>
+</html>

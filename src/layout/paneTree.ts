@@ -112,9 +112,9 @@ export function splitPane(node: PaneNode, targetId: string, dir: SplitDir, fresh
 
 /**
  * Move the divider of the split at `path`: the root itself for [], otherwise one step
- * per level (0 = first half). Rebuilds the nodes along the path only, so panes keep
- * their identity — a box changes, nothing is remounted, no shell is killed. Unknown
- * paths, and a ratio that changes nothing, give the tree back untouched.
+ * per level (0 = first half, 1 = second). Rebuilds the nodes along the path only, so
+ * panes keep their identity — a box changes, nothing is remounted, no shell is killed.
+ * Unknown paths, and a ratio that changes nothing, give the tree back untouched.
  */
 export function setSplitRatio(node: PaneNode, path: BranchPath, ratio: number): PaneNode {
   if (node.kind === "pane") return node;
@@ -127,4 +127,25 @@ export function setSplitRatio(node: PaneNode, path: BranchPath, ratio: number): 
   const moved = setSplitRatio(child, rest, ratio);
   if (moved === child) return node;
   return step === 0 ? { ...node, first: moved } : { ...node, second: moved };
+}
+
+/** Which half a removed leaf was: the survivor takes its parent's place. */
+type RemoveResult = { tree: PaneNode; removed: boolean };
+
+/**
+ * Take the leaf with `targetId` out of the tree. Its sibling is promoted into the
+ * parent's place — that is what makes a two-way split close back up instead of leaving
+ * a hole. Unknown ids, and a lone root leaf, come back untouched.
+ */
+export function removePane(node: PaneNode, targetId: string): RemoveResult {
+  if (node.kind === "pane") return { tree: node, removed: node.id === targetId };
+  // Try the first half; if the leaf was there, the second half takes over whole.
+  const fromFirst = removePane(node.first, targetId);
+  if (fromFirst.removed) return { tree: node.second, removed: true };
+  const fromSecond = removePane(node.second, targetId);
+  if (fromSecond.removed) return { tree: node.first, removed: true };
+  // The leaf lives deeper: rebuild only the branch that changed.
+  if (fromFirst.tree !== node.first) return { tree: { ...node, first: fromFirst.tree }, removed: false };
+  if (fromSecond.tree !== node.second) return { tree: { ...node, second: fromSecond.tree }, removed: false };
+  return { tree: node, removed: false };
 }

@@ -23,7 +23,7 @@ export interface SysStats {
 export interface StatusBarProps {
   /** Latest sample; null until the first one arrives */
   stats: SysStats | null;
-  /** Terminal font zoom, percent */
+  /** Effective terminal font zoom of the focused pane, percent */
   fontSizePercent?: number;
   /** Columns on screen */
   columns?: number;

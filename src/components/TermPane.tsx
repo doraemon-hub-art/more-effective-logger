@@ -18,11 +18,13 @@ export interface TermPaneProps {
   paneId: string;
   /** Active pane: red head */
   focused?: boolean;
+  /** Font size of the terminal screen, in px (settings base × pane zoom) */
+  fontSize?: number;
   /** Reporting upwards: the page needs this for the top bar */
   onStatus?: (paneId: string, status: TerminalStatus) => void;
 }
 
-function TermPane({ paneId, focused = false, onStatus }: TermPaneProps) {
+function TermPane({ paneId, focused = false, fontSize = 12.5, onStatus }: TermPaneProps) {
   const [status, setStatus] = useState<TerminalStatus | null>(null);
   const failed = status?.failure != null;
 
@@ -61,7 +63,7 @@ function TermPane({ paneId, focused = false, onStatus }: TermPaneProps) {
 
       {/* pane body: the terminal widget fills it */}
       <div className="min-h-0 flex-1 overflow-hidden bg-base p-2">
-        <TerminalView id={paneId} focused={focused} onStatus={handleStatus} />
+        <TerminalView id={paneId} focused={focused} fontSize={fontSize} onStatus={handleStatus} />
       </div>
     </div>
   );

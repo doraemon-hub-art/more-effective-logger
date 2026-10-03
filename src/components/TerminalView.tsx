@@ -102,13 +102,21 @@ export interface TerminalViewProps {
    * move the keystrokes too, otherwise you keep typing into the previous pane.
    */
   focused?: boolean;
+  /** Font size of this terminal's screen, in px (base from settings × pane zoom). */
+  fontSize?: number;
   /** Box classes; defaults to filling the parent. */
   className?: string;
 }
 
-function TerminalView({ id, onStatus, onExit, focused, className }: TerminalViewProps) {
+function TerminalView({ id, onStatus, onExit, focused, fontSize = 12.5, className }: TerminalViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
+  // Survives between effects: the font-size effect refits through the same addon
+  // instance the mount effect created, without reaching into xterm's internals.
+  const fitRef = useRef<FitAddon | null>(null);
+  // The session id lives inside the mount effect; zoom changes need it to tell the
+  // shell about the new size, so the latest one is mirrored here on each report.
+  const sessionIdRef = useRef<string | null>(null);
   // Kept in refs so a re-render with fresh closures never tears the pty down.
   const statusRef = useRef(onStatus);
   const exitRef = useRef(onExit);
@@ -123,6 +131,7 @@ function TerminalView({ id, onStatus, onExit, focused, className }: TerminalView
     // remount (React runs effects twice in development) never collides with the
     // session that is still being torn down.
     const sessionId = `${id ?? "term"}-${Math.random().toString(36).slice(2, 8)}`;
+    sessionIdRef.current = sessionId;
     let status: TerminalStatus = {
       id: sessionId,
       pid: null,
@@ -141,7 +150,7 @@ function TerminalView({ id, onStatus, onExit, focused, className }: TerminalView
 
     const term = new Terminal({
       fontFamily: '"JetBrains Mono", "Fira Code", "DejaVu Sans Mono", monospace',
-      fontSize: 12.5,
+      fontSize,
       lineHeight: 1.2,
       cursorBlink: true,
       scrollback: 5000,
@@ -149,6 +158,7 @@ function TerminalView({ id, onStatus, onExit, focused, className }: TerminalView
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    fitRef.current = fit;
     term.open(host);
     termRef.current = term;
 
@@ -246,6 +256,8 @@ function TerminalView({ id, onStatus, onExit, focused, className }: TerminalView
       void invoke("pty_kill", { id: sessionId });
       term.dispose();
       termRef.current = null;
+      fitRef.current = null;
+      sessionIdRef.current = null;
     };
   }, [id]);
 
@@ -254,6 +266,23 @@ function TerminalView({ id, onStatus, onExit, focused, className }: TerminalView
   useEffect(() => {
     if (focused) termRef.current?.focus();
   }, [focused]);
+
+  // Zoom / settings change -> a new screen size. The fit observer only fires on box
+  // geometry, which a pure font-size change does not touch, so the refit happens here.
+  // The shell learns the new cols/rows through a direct pty_resize: the observer sees
+  // no box change and would stay silent.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.fontSize = fontSize;
+    fitRef.current?.fit();
+    if (hostRef.current?.clientWidth) {
+      const sessionId = sessionIdRef.current;
+      if (sessionId) {
+        void invoke("pty_resize", { id: sessionId, cols: term.cols, rows: term.rows }).catch(() => {});
+      }
+    }
+  }, [fontSize]);
 
   return <div ref={hostRef} className={className ?? "h-full w-full"} />;
 }
