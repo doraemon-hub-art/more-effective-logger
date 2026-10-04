@@ -14,22 +14,23 @@
  * indirection beyond that.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { FLAVORS, type ThemeName } from "../theme";
 
-/** Catppuccin flavors the app ships with. */
-export type ThemeName = "mocha" | "macchiato" | "frappe" | "latte";
+/** What the app brings up on a start. */
+export type StartupMode = "restore" | "fresh";
 
 /**
  * Everything the settings page can change, in one bag: wiring a new value up is a field
  * plus a row, and nothing else has to learn about it.
  */
 export interface AppSettings {
-  /** Monospace family the UI and the terminal use. */
+  /** Family name of the monospace font the UI and the terminal use. */
   fontFamily: string;
   /** Font size in px; the terminal follows it. */
   fontSize: number;
   /**
-   * Whole-interface zoom. The UI scales through a root font-size multiplier, the
-   * terminal through its own font size, so both follow one knob.
+   * Whole-interface zoom: the webview's own page zoom (browser Ctrl+wheel semantics),
+   * applied by App through a backend call; the terminal screens scale with the UI.
    */
   zoom: number;
   /** Catppuccin flavor. */
@@ -42,13 +43,15 @@ export interface AppSettings {
   baud: number;
   /** Serial frame splitting: the idle gap that ends a frame, in ms. */
   frameGapMs: number;
+  /** A start opens the layout left behind last time, or a single new page. */
+  startup: StartupMode;
 }
 
 /** Font size the status bar calls 100%. */
 export const BASE_FONT_SIZE = 12.5;
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  fontFamily: "jetbrains",
+  fontFamily: "JetBrains Mono",
   fontSize: BASE_FONT_SIZE,
   zoom: 1,
   theme: "mocha",
@@ -56,15 +59,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   scrollback: 5000,
   baud: 115200,
   frameGapMs: 2,
+  startup: "restore",
 };
 
-/** Monospace families offered; the stack keeps a CJK fallback behind each of them. */
-const FONT_FAMILIES = [
-  { id: "jetbrains", label: "JetBrains Mono" },
-  { id: "fira", label: "Fira Code" },
-  { id: "dejavu", label: "DejaVu Sans Mono" },
-  { id: "noto", label: "Noto Sans Mono" },
-];
+/** Families offered when the scan came back empty; the names are real family names. */
+const FONT_FALLBACK = ["JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Noto Sans Mono"];
 /** Font sizes offered. */
 const FONT_STEPS = [11.5, 12.5, 14];
 /** Interface zoom levels offered, as multipliers of the designed sizes. */
@@ -75,12 +74,10 @@ const SCROLLBACK_STEPS = [1000, 5000, 20000];
 const BAUD_STEPS = [9600, 115200, 921600];
 /** Serial frame gaps offered. */
 const FRAME_GAP_STEPS = [2, 5, 10];
-/** Flavors offered; the swatch is the flavor's own background. */
-const THEMES: Array<{ id: ThemeName; label: string; swatch: string }> = [
-  { id: "mocha", label: "Mocha", swatch: "#1e1e2e" },
-  { id: "macchiato", label: "Macchiato", swatch: "#24273a" },
-  { id: "frappe", label: "Frappé", swatch: "#303446" },
-  { id: "latte", label: "Latte", swatch: "#eff1f5" },
+/** Startup behaviors offered. */
+const STARTUP_STEPS: Array<{ id: StartupMode; label: string }> = [
+  { id: "restore", label: "上次布局" },
+  { id: "fresh", label: "新页面" },
 ];
 
 /** The categories, in the order they appear in the column. */
@@ -98,6 +95,8 @@ export interface SettingsPageProps {
   settings: AppSettings;
   /** Hand the changed fields back; the app owns the values. */
   onChange: (patch: Partial<AppSettings>) => void;
+  /** Monospace families installed on this machine, from the backend scan. */
+  fonts: string[];
 }
 
 /** How long the jump highlight holds before it fades back to normal, in ms. */
@@ -243,7 +242,7 @@ function Key({ children }: { children: ReactNode }) {
   );
 }
 
-function SettingsPage({ settings, onChange }: SettingsPageProps) {
+function SettingsPage({ settings, onChange, fonts }: SettingsPageProps) {
   const columnRef = useRef<HTMLDivElement | null>(null);
   const [current, setCurrent] = useState(SECTIONS[0].id);
   const [flash, setFlash] = useState<string | null>(null);
@@ -276,8 +275,10 @@ function SettingsPage({ settings, onChange }: SettingsPageProps) {
 
   return (
     // Capped and centred: on a wide window the block stays a readable width instead of
-    // stretching the fields and their values to opposite edges.
-    <div className="mx-auto flex min-h-0 min-w-0 w-full max-w-[900px] bg-base">
+    // stretching the fields and their values to opposite edges. Full height is what the
+    // column scrolls against — without it the page grows to its content and a short
+    // window pushes the rows off the bottom instead of letting them scroll.
+    <div className="mx-auto flex h-full min-h-0 min-w-0 w-full max-w-[900px] bg-base">
       <nav className="flex w-[168px] flex-none flex-col border-r border-surface0 bg-mantle py-1.5">
         {SECTIONS.map(section => (
           <button
@@ -302,7 +303,7 @@ function SettingsPage({ settings, onChange }: SettingsPageProps) {
           <Group id="gui" title="界面" flash={flash === "gui"}>
             <Row label="字体">
               <PickList
-                options={FONT_FAMILIES}
+                options={(fonts.length ? fonts : FONT_FALLBACK).map(name => ({ id: name, label: name }))}
                 value={settings.fontFamily}
                 onPick={id => onChange({ fontFamily: id })}
               />
@@ -322,13 +323,21 @@ function SettingsPage({ settings, onChange }: SettingsPageProps) {
               ))}
             </Row>
             <Row label="主题" note="Catppuccin">
-              {THEMES.map(theme => (
-                <Chip key={theme.id} on={settings.theme === theme.id} onClick={() => onChange({ theme: theme.id })}>
+              {FLAVORS.map(flavor => (
+                <Chip key={flavor.id} on={settings.theme === flavor.id} onClick={() => onChange({ theme: flavor.id })}>
                   <span
                     className="mr-1.5 inline-block h-2 w-2 rounded-full border border-black/35 align-[-1px]"
-                    style={{ background: theme.swatch }}
+                    style={{ background: flavor.palette.base }}
                   />
-                  {theme.label}
+                  {flavor.label}
+                  {flavor.id === DEFAULT_SETTINGS.theme ? " (default)" : null}
+                </Chip>
+              ))}
+            </Row>
+            <Row label="启动时">
+              {STARTUP_STEPS.map(step => (
+                <Chip key={step.id} on={settings.startup === step.id} onClick={() => onChange({ startup: step.id })}>
+                  {step.label}
                 </Chip>
               ))}
             </Row>

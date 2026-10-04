@@ -9,6 +9,7 @@
  */
 
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::thread;
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -88,21 +89,44 @@ impl PtySession {
         let pid = self.child.process_id()?;
         let path = std::fs::read_link(format!("/proc/{pid}/cwd")).ok()?;
         let path = path.to_string_lossy().to_string();
-        let home = std::env::var("HOME").ok();
+        let home = std::env::var("HOME").ok().filter(|home| !home.is_empty());
         Some(match home {
-            Some(home) if !home.is_empty() && path.starts_with(&home) => {
-                format!("~{}", &path[home.len()..])
-            }
-            _ => path,
+            // Only a path boundary shortens: `/home/xuanother` is not under `/home/xuan`.
+            Some(home) if path == home => "~".to_string(),
+            Some(home) => match path.strip_prefix(&format!("{home}/")) {
+                Some(rest) => format!("~/{rest}"),
+                None => path,
+            },
+            None => path,
         })
     }
+}
+
+/// The directory a restored shell should start in. The session file holds the shortened
+/// form the pane head shows (`~`), and only a shell expands a tilde, so it is resolved
+/// here. A directory that is gone by now is not an error — the shell starts where it
+/// otherwise would, which is what `None` means.
+fn restored_dir(dir: &str) -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok().filter(|home| !home.is_empty());
+    let path = match (home, dir) {
+        (Some(home), "~") => PathBuf::from(home),
+        (Some(home), dir) if dir.starts_with("~/") => PathBuf::from(home).join(&dir[2..]),
+        _ => PathBuf::from(dir),
+    };
+    path.is_dir().then_some(path)
 }
 
 /// Spawn a shell in a fresh pty and start its reader thread.
 ///
 /// The session is registered under `id` before this returns, so the frontend can
 /// send input for that id immediately.
-pub fn spawn(app: &AppHandle, id: &str, cols: u16, rows: u16) -> Result<SessionInfo, String> {
+pub fn spawn(
+    app: &AppHandle,
+    id: &str,
+    cols: u16,
+    rows: u16,
+    cwd: Option<&str>,
+) -> Result<SessionInfo, String> {
     if cols == 0 || rows == 0 {
         return Err("terminal size must be non-zero".into());
     }
@@ -130,6 +154,10 @@ pub fn spawn(app: &AppHandle, id: &str, cols: u16, rows: u16) -> Result<SessionI
     // because a pty has no other way to tell the shell what it is talking to.
     let mut cmd = CommandBuilder::new_default_prog();
     cmd.env("TERM", "xterm-256color");
+    // A restored pane's shell starts where it was left.
+    if let Some(dir) = cwd.and_then(restored_dir) {
+        cmd.cwd(dir);
+    }
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     // The slave end must be closed here, otherwise the reader below never sees EOF.
     drop(pair.slave);

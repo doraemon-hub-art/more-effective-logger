@@ -17,17 +17,22 @@
  * Splitting is mouse-driven for now (right click -> direction -> pane type).
  */
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import TermPane from "./components/TermPane";
 import SerialPane from "./components/SerialPane";
-import { type TerminalStatus } from "./components/TerminalView";
+import { fontStack, type TerminalStatus } from "./components/TerminalView";
 import StatusBar, { type SysStats } from "./components/StatusBar";
 import ContextMenu, { type MenuItem } from "./components/ContextMenu";
 import PaneTypeMenu from "./components/PaneTypeMenu";
 import TopBar, { type PageCell } from "./components/TopBar";
 import SettingsPage, { BASE_FONT_SIZE, DEFAULT_SETTINGS, type AppSettings } from "./components/SettingsPage";
+import { paletteOf } from "./theme";
 import Layout from "./layout/Layout";
 import {
+  clampRatio,
+  collectPanes,
   columnCount,
   createPane,
   createTermPane,
@@ -36,9 +41,11 @@ import {
   setSplitRatio,
   splitPane,
   type BranchPath,
+  type PaneLeaf,
   type PaneNode,
   type PaneType,
   type SplitDir,
+  type SplitNode,
 } from "./layout/paneTree";
 import { neighborInDirection, paneBoxes, type Direction, type PaneBox } from "./layout/paneRects";
 
@@ -82,20 +89,237 @@ const ARROW_DIRECTION: Record<string, Direction | undefined> = {
   arrowdown: "down",
 };
 
+/**
+ * The values read from the settings file, kept only where the type matches the default:
+ * a hand-edited file with a wrong type falls back instead of breaking the app, and an
+ * unknown key is dropped rather than carried around.
+ */
+function mergeSettings(saved: Record<string, unknown>): Partial<AppSettings> {
+  const patch: Record<string, unknown> = {};
+  for (const key of Object.keys(DEFAULT_SETTINGS) as Array<keyof AppSettings>) {
+    const value = saved[key];
+    if (typeof value === typeof DEFAULT_SETTINGS[key]) patch[key] = value;
+  }
+  return patch as Partial<AppSettings>;
+}
+
+/** What the app comes back to after a start: the pages, the focus, the shell directories. */
+interface Session {
+  pages: Page[];
+  activePageId: string | null;
+  /** Focused pane of each page, by page id. */
+  focusByPage: Record<string, string | null>;
+  /** Directory each terminal pane's shell was sitting in, by pane id. */
+  cwdByPane: Record<string, string>;
+}
+
+/** A tree the app can draw again: the right shape, and ratios inside the usable range. */
+function restoreTree(node: unknown): PaneNode | null {
+  if (!node || typeof node !== "object") return null;
+  const branch = node as SplitNode;
+  if (branch.kind === "split") {
+    if (branch.dir !== "row" && branch.dir !== "col") return null;
+    const first = restoreTree(branch.first);
+    const second = restoreTree(branch.second);
+    if (!first || !second) return null;
+    return { kind: "split", dir: branch.dir, ratio: clampRatio(branch.ratio), first, second };
+  }
+  const leaf = node as PaneLeaf;
+  if (leaf.kind !== "pane" || typeof leaf.id !== "string") return null;
+  if (leaf.type !== "term" && leaf.type !== "serial") return null;
+  return { kind: "pane", id: leaf.id, type: leaf.type };
+}
+
+/**
+ * The session the file holds, kept only as far as it is something the app can draw: a
+ * stranger's file, or one from an older version, must not take the window down with it.
+ */
+function restoreSession(saved: unknown): Session | null {
+  const value = saved as Partial<Session> | null;
+  if (!value || !Array.isArray(value.pages)) return null;
+
+  const pages: Page[] = [];
+  for (const page of value.pages as Page[]) {
+    if (!page || typeof page.id !== "string") continue;
+    const title = typeof page.title === "string" ? page.title : "";
+    if (page.kind === "settings") {
+      pages.push({ id: page.id, title, kind: "settings" });
+      continue;
+    }
+    if (page.kind !== "workspace") continue;
+    const tree = restoreTree((page as { tree?: unknown }).tree);
+    if (tree) pages.push({ id: page.id, title, kind: "workspace", tree });
+  }
+  if (pages.length === 0) return null;
+
+  const wanted = value.activePageId;
+  const activePageId = pages.some(page => page.id === wanted) ? (wanted as string) : pages[0].id;
+
+  const focusByPage: Record<string, string | null> = {};
+  const cwdByPane: Record<string, string> = {};
+  // Only a terminal has a directory to come back to: a serial pane, or any pane kind added
+  // later, brings nothing but itself.
+  const termIds = new Set<string>();
+  for (const page of pages) {
+    if (page.kind !== "workspace") continue;
+    const panes = collectPanes(page.tree);
+    panes.forEach(pane => {
+      if (pane.type === "term") termIds.add(pane.id);
+    });
+    const focused = (value.focusByPage ?? {})[page.id];
+    if (typeof focused === "string" && panes.some(pane => pane.id === focused)) {
+      focusByPage[page.id] = focused;
+    }
+  }
+  for (const [paneId, dir] of Object.entries(value.cwdByPane ?? {})) {
+    if (termIds.has(paneId) && typeof dir === "string") cwdByPane[paneId] = dir;
+  }
+  return { pages, activePageId, focusByPage, cwdByPane };
+}
+
+/** The number in a title like "页 3", so a restored page number is never handed out twice. */
+function pageNumber(title: string): number {
+  const match = /^页\s*(\d+)$/.exec(title);
+  return match ? Number(match[1]) : 0;
+}
+
 function App() {
   const [stats, setStats] = useState<SysStats | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  /** True once the settings file and the session have been read (or given up on). */
+  const [booted, setBooted] = useState(false);
+  /** JSON of the settings as last written, so nothing is written back unchanged. */
+  const writtenSettings = useRef<string | null>(null);
+
+  // Whole-interface zoom: the webview's own page zoom, browser Ctrl+wheel semantics —
+  // UI and terminal screens scale together and stay sharp, no cols/rows change.
+  useEffect(() => {
+    void invoke("set_zoom", { scale: settings.zoom }).catch(() => {});
+  }, [settings.zoom]);
+
+  /** Installed monospace families; the settings page picks from these, not from a list
+   * we ship. Empty until the scan answers, and on machines without fontconfig. */
+  const [fonts, setFonts] = useState<string[]>([]);
+  useEffect(() => {
+    void invoke<string[]>("font_list")
+      .then(list => setFonts(list))
+      .catch(() => {});
+  }, []);
+
+  // A family that is not installed cannot be used: when the scan comes back without
+  // the designed default, the first installed family takes its place.
+  useEffect(() => {
+    if (fonts.length && !fonts.includes(settings.fontFamily)) {
+      setSettings(current => ({ ...current, fontFamily: fonts[0] }));
+    }
+  }, [fonts, settings.fontFamily]);
+
+  // The family reaches the interface through the `--font-mono` token (every font-mono
+  // class reads it) and each terminal screen through the prop handed down below.
+  useEffect(() => {
+    document.documentElement.style.setProperty("--font-mono", fontStack(settings.fontFamily));
+  }, [settings.fontFamily]);
+
+  // The flavor reaches the interface by rewriting the --color-* tokens index.css
+  // registers; every bg-base / text-fg / border-surface0 follows on its own. Terminals
+  // get the same palette through the prop below.
+  useEffect(() => {
+    // Object.entries widens the values to unknown on a plain interface, hence the cast.
+    for (const [token, value] of Object.entries(paletteOf(settings.theme)) as Array<[string, string]>) {
+      document.documentElement.style.setProperty(`--color-${token}`, value);
+    }
+  }, [settings.theme]);
+
   const [pages, setPages] = useState<Page[]>(() => [
     { id: newPageId(), title: "页 1", kind: "workspace", tree: createTermPane() },
   ]);
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [focusByPage, setFocusByPage] = useState<Record<string, string | null>>({});
   const [paneStatus, setPaneStatus] = useState<Record<string, TerminalStatus>>({});
+  /** Directory a restored pane starts its shell in, by pane id; fresh panes have none. */
+  const [startCwd, setStartCwd] = useState<Record<string, string>>({});
   /** Non-terminal panes describe themselves (serial: device + rate). */
   const [paneLabel, setPaneLabel] = useState<Record<string, string>>({});
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [splitMenu, setSplitMenu] = useState<SplitMenuState | null>(null);
   const titleSeq = useRef(1);
+
+  /**
+   * Boot: read the settings file, then — when the startup setting asks for it — the layout
+   * left behind last time. Drawing waits for both: no default page is spawned only to be
+   * thrown away, and the window never flashes the default flavor on its way to the saved one.
+   */
+  useEffect(() => {
+    void (async () => {
+      let restored: Session | null = null;
+      try {
+        const saved = await invoke<Record<string, unknown> | null>("settings_load");
+        const patch = saved ? mergeSettings(saved) : {};
+        if (saved) setSettings(current => ({ ...current, ...patch }));
+        if ((patch.startup ?? DEFAULT_SETTINGS.startup) === "restore") {
+          restored = restoreSession(await invoke("session_load"));
+        }
+      } catch {
+        // A missing or unreadable file is not a failure: the defaults are always usable.
+      }
+      if (restored) {
+        setPages(restored.pages);
+        setActivePageId(restored.activePageId);
+        setFocusByPage(restored.focusByPage);
+        setStartCwd(restored.cwdByPane);
+        // Page numbers keep counting from the highest one that came back.
+        titleSeq.current = restored.pages.reduce((max, page) => Math.max(max, pageNumber(page.title)), 1);
+      }
+      setBooted(true);
+    })();
+  }, []);
+
+  // Every settings change goes straight back to the file — there is no save button. The
+  // first write also creates the file, which is how the defaults land on disk on a fresh run.
+  useEffect(() => {
+    if (!booted) return;
+    const json = JSON.stringify(settings);
+    if (json === writtenSettings.current) return;
+    writtenSettings.current = json;
+    void invoke("settings_save", { settings }).catch(() => {});
+  }, [booted, settings]);
+
+  /**
+   * What the next start comes back to: the pages as they are now, the focus, and where every
+   * live shell is sitting. The directories are read from the kernel at this moment rather
+   * than taken from the pane head's poll, which can be seconds behind.
+   */
+  const writeSession = useRef<() => Promise<void>>(async () => {});
+  writeSession.current = async () => {
+    if (settings.startup !== "restore") return;
+    const cwdByPane: Record<string, string> = {};
+    for (const [paneId, status] of Object.entries(paneStatus)) {
+      if (!status.running) continue;
+      const dir = await invoke<string | null>("terminal_cwd", { id: status.id }).catch(() => null);
+      if (dir) cwdByPane[paneId] = dir;
+    }
+    await invoke("session_save", { session: { pages, activePageId, focusByPage, cwdByPane } }).catch(() => {});
+  };
+
+  // The session is written on the way out and nowhere else: the layout only ever matters at
+  // the moment a start would come back to it, so there is nothing to keep in step until then.
+  // The close is held back for it — losing the write would cost the whole working layout.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void getCurrentWindow()
+      .onCloseRequested(async event => {
+        event.preventDefault();
+        try {
+          await writeSession.current();
+        } finally {
+          await getCurrentWindow().destroy();
+        }
+      })
+      .then(off => {
+        unlisten = off;
+      });
+    return () => unlisten?.();
+  }, []);
 
   const activePage = pages.find(page => page.id === activePageId) ?? pages[0];
   /** The settings page, when it is open at all; there is never more than one. */
@@ -384,6 +608,10 @@ function App() {
       ]
     : [];
 
+  // Nothing is drawn until the files have been read, so the window never flashes the default
+  // flavor on its way to the saved one, and a restored layout never mounts a throwaway page.
+  if (!booted) return <div className="h-full w-full bg-crust" />;
+
   return (
     <div className="flex h-screen flex-col bg-crust">
       <TopBar cells={pageCells} onSelectPage={setActivePageId} onClosePage={closePage} />
@@ -399,7 +627,7 @@ function App() {
                 className="absolute inset-0 flex p-16"
                 style={{ display: page.id === activePage.id ? "block" : "none" }}
               >
-                <SettingsPage settings={settings} onChange={updateSettings} />
+                <SettingsPage settings={settings} onChange={updateSettings} fonts={fonts} />
               </div>
             );
           }
@@ -428,6 +656,9 @@ function App() {
                       paneId={pane.id}
                       focused={isFocused}
                       fontSize={settings.fontSize * (zoomByPane[pane.id] ?? 1)}
+                      fontFamily={settings.fontFamily}
+                      theme={settings.theme}
+                      cwd={startCwd[pane.id]}
                       onStatus={reportPaneStatus}
                     />
                   )

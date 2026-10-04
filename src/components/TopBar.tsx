@@ -7,7 +7,7 @@
  *
  * One cell per page, split evenly, no page numbering: a cell shows what the page's
  * focused pane is, in the shape the reference terminal uses — `user@host: path` with
- * the pane geometry at the right end. The active page's cell is the red bar.
+ * the pane geometry at the right end. The active page's cell is the blue bar.
  * Clicking a cell switches to that page (the keyboard does the same); the ✕ at its end
  * closes that page, so every page carries its own way out.
  */
@@ -40,7 +40,7 @@ function TopBar({ cells, onSelectPage, onClosePage }: TopBarProps) {
           key={cell.id}
           onClick={() => onSelectPage(cell.id)}
           className={`flex min-w-0 cursor-pointer items-center gap-3 px-3 font-mono text-[11.5px] ${
-            cell.active ? "bg-red text-base" : "text-overlay0 hover:text-subtext0"
+            cell.active ? "bg-blue text-base" : "text-overlay0 hover:text-subtext0"
           } ${index < cells.length - 1 ? "border-r border-r-surface0/45" : ""}`}
         >
           <span className="min-w-0 flex-1 truncate text-left">{cell.title}</span>

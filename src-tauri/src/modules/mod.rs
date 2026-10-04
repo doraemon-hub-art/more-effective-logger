@@ -15,6 +15,8 @@
  * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
  */
 
+pub mod fonts;
 pub mod pty;
 pub mod serial;
+pub mod store;
 pub mod sysstat;

@@ -4,3 +4,4 @@
 - 代码中不要有任何敏感信息；
 - 禁止任何git push/commit/checkout等git操作，只能status/diff这种仅查看的无害操作；
 - 每次写完代码，需按照nvim中配置格式化；
+- 总结commit信息时，按照用户之前的commit格式习惯，并且精简；

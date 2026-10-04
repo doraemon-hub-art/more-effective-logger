@@ -21,32 +21,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { terminalTheme, type ThemeName } from "../theme";
 import "@xterm/xterm/css/xterm.css";
 
-/** Catppuccin Mocha, so the shell matches the rest of the UI. */
-const TERM_THEME = {
-  background: "#1e1e2e",
-  foreground: "#cdd6f4",
-  cursor: "#cdd6f4",
-  cursorAccent: "#1e1e2e",
-  selectionBackground: "#45475a",
-  black: "#45475a",
-  red: "#f38ba8",
-  green: "#a6e3a1",
-  yellow: "#f9e2af",
-  blue: "#89b4fa",
-  magenta: "#cba6f7",
-  cyan: "#89dceb",
-  white: "#bac2de",
-  brightBlack: "#585b70",
-  brightRed: "#f38ba8",
-  brightGreen: "#a6e3a1",
-  brightYellow: "#f9e2af",
-  brightBlue: "#89b4fa",
-  brightMagenta: "#cba6f7",
-  brightCyan: "#89dceb",
-  brightWhite: "#a6adc8",
-};
+/**
+ * The screen's font stack: the family picked in the settings, with the CJK fallback and
+ * a generic behind it. The interface reads the same string through the `--font-mono`
+ * token, so one setting moves both.
+ */
+export function fontStack(family: string): string {
+  return `"${family}", "Noto Sans Mono CJK SC", monospace`;
+}
 
 /**
  * How long the box has to hold still before the shell is told about a new size.
@@ -104,11 +89,27 @@ export interface TerminalViewProps {
   focused?: boolean;
   /** Font size of this terminal's screen, in px (base from settings × pane zoom). */
   fontSize?: number;
+  /** Monospace family this terminal renders in; the settings page picks it. */
+  fontFamily?: string;
+  /** Catppuccin flavor of the screen; the settings page picks it. */
+  theme?: ThemeName;
+  /** Directory the shell starts in; set for a pane restored from the last session. */
+  cwd?: string;
   /** Box classes; defaults to filling the parent. */
   className?: string;
 }
 
-function TerminalView({ id, onStatus, onExit, focused, fontSize = 12.5, className }: TerminalViewProps) {
+function TerminalView({
+  id,
+  onStatus,
+  onExit,
+  focused,
+  fontSize = 12.5,
+  fontFamily = "JetBrains Mono",
+  theme = "mocha",
+  cwd,
+  className,
+}: TerminalViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   // Survives between effects: the font-size effect refits through the same addon
@@ -149,12 +150,12 @@ function TerminalView({ id, onStatus, onExit, focused, fontSize = 12.5, classNam
     };
 
     const term = new Terminal({
-      fontFamily: '"JetBrains Mono", "Fira Code", "DejaVu Sans Mono", monospace',
+      fontFamily: fontStack(fontFamily),
       fontSize,
       lineHeight: 1.2,
       cursorBlink: true,
       scrollback: 5000,
-      theme: TERM_THEME,
+      theme: terminalTheme(theme),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -224,6 +225,7 @@ function TerminalView({ id, onStatus, onExit, focused, fontSize = 12.5, classNam
           id: sessionId,
           cols: Math.max(term.cols, 20),
           rows: Math.max(term.rows, 5),
+          cwd,
         });
         if (disposed) {
           void invoke("pty_kill", { id: sessionId });
@@ -268,13 +270,14 @@ function TerminalView({ id, onStatus, onExit, focused, fontSize = 12.5, classNam
   }, [focused]);
 
   // Zoom / settings change -> a new screen size. The fit observer only fires on box
-  // geometry, which a pure font-size change does not touch, so the refit happens here.
+  // geometry, which a pure font change does not touch, so the refit happens here.
   // The shell learns the new cols/rows through a direct pty_resize: the observer sees
   // no box change and would stay silent.
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
     term.options.fontSize = fontSize;
+    term.options.fontFamily = fontStack(fontFamily);
     fitRef.current?.fit();
     if (hostRef.current?.clientWidth) {
       const sessionId = sessionIdRef.current;
@@ -282,7 +285,14 @@ function TerminalView({ id, onStatus, onExit, focused, fontSize = 12.5, classNam
         void invoke("pty_resize", { id: sessionId, cols: term.cols, rows: term.rows }).catch(() => {});
       }
     }
-  }, [fontSize]);
+  }, [fontSize, fontFamily]);
+
+  // Flavor change -> re-theme the screen in place. xterm repaints the whole view when
+  // its theme option changes, and the cell size is untouched, so no refit is needed.
+  useEffect(() => {
+    const term = termRef.current;
+    if (term) term.options.theme = terminalTheme(theme);
+  }, [theme]);
 
   return <div ref={hostRef} className={className ?? "h-full w-full"} />;
 }

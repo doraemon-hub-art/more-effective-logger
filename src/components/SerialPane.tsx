@@ -79,7 +79,7 @@ function chip(on: boolean): string {
 export interface SerialPaneProps {
   /** Pane id, also used as the serial session id */
   paneId: string;
-  /** Active pane: red head */
+  /** Active pane: blue head */
   focused?: boolean;
   /** Reporting upwards: the page shows this in the top bar */
   onLabel?: (paneId: string, label: string) => void;
@@ -266,7 +266,7 @@ function SerialPane({ paneId, focused = false, onLabel }: SerialPaneProps) {
   const header = (
     <div
       className={`flex h-[26px] flex-none items-center gap-2 border-b border-surface0 px-2 font-mono text-[11.5px] ${
-        focused ? "bg-red text-base" : "bg-mantle text-subtext0"
+        focused ? "bg-blue text-base" : "bg-mantle text-subtext0"
       }`}
     >
       <span

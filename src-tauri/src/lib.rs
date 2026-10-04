@@ -24,12 +24,18 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_ping,
+            commands::set_zoom,
             commands::spawn_terminal,
             commands::pty_input,
             commands::pty_resize,
             commands::pty_kill,
             commands::terminal_cwd,
             commands::serial_list,
+            commands::font_list,
+            commands::settings_load,
+            commands::settings_save,
+            commands::session_load,
+            commands::session_save,
             commands::serial_open,
             commands::serial_write,
             commands::serial_close

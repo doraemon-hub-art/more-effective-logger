@@ -8,23 +8,30 @@
  * Sizing and positioning belong to the layout (Layout.tsx gives every pane a box);
  * this component only fills the box it is handed. The head follows the reference
  * terminal: `user@host: path` with the geometry at the right end, and the active
- * pane is the one with the red bar.
+ * pane is the one with the blue bar.
  */
 import { useCallback, useState } from "react";
 import TerminalView, { type TerminalStatus } from "./TerminalView";
+import type { ThemeName } from "../theme";
 
 export interface TermPaneProps {
   /** Pane id, also used as the terminal session id */
   paneId: string;
-  /** Active pane: red head */
+  /** Active pane: blue head */
   focused?: boolean;
   /** Font size of the terminal screen, in px (settings base × pane zoom) */
   fontSize?: number;
+  /** Monospace family the terminal screen renders in (from settings) */
+  fontFamily?: string;
+  /** Catppuccin flavor of the terminal screen (from settings) */
+  theme?: ThemeName;
+  /** Directory the shell starts in; set for a pane restored from the last session */
+  cwd?: string;
   /** Reporting upwards: the page needs this for the top bar */
   onStatus?: (paneId: string, status: TerminalStatus) => void;
 }
 
-function TermPane({ paneId, focused = false, fontSize = 12.5, onStatus }: TermPaneProps) {
+function TermPane({ paneId, focused = false, fontSize = 12.5, fontFamily, theme, cwd, onStatus }: TermPaneProps) {
   const [status, setStatus] = useState<TerminalStatus | null>(null);
   const failed = status?.failure != null;
 
@@ -41,7 +48,7 @@ function TermPane({ paneId, focused = false, fontSize = 12.5, onStatus }: TermPa
       {/* pane head: user@host: path on the left, geometry on the right */}
       <div
         className={`flex h-[26px] flex-none items-center gap-2 border-b border-surface0 px-2 font-mono text-[11.5px] ${
-          focused ? "bg-red text-base" : "bg-mantle text-subtext0"
+          focused ? "bg-blue text-base" : "bg-mantle text-subtext0"
         }`}
       >
         <span
@@ -63,7 +70,15 @@ function TermPane({ paneId, focused = false, fontSize = 12.5, onStatus }: TermPa
 
       {/* pane body: the terminal widget fills it */}
       <div className="min-h-0 flex-1 overflow-hidden bg-base p-2">
-        <TerminalView id={paneId} focused={focused} fontSize={fontSize} onStatus={handleStatus} />
+        <TerminalView
+          id={paneId}
+          focused={focused}
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          theme={theme}
+          cwd={cwd}
+          onStatus={handleStatus}
+        />
       </div>
     </div>
   );
