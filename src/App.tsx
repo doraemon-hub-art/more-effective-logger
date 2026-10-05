@@ -381,8 +381,8 @@ function App() {
   const updateSettings = (patch: Partial<AppSettings>) => setSettings(current => ({ ...current, ...patch }));
 
   /**
-   * The settings page is a page, so opening it makes one — but only ever one: asking
-   * again just switches to the one that is already there.
+   * The settings page is a page, so opening it makes one — but only ever one: asking again
+   * just switches to the one that is already there.
    */
   const openSettings = () => {
     if (settingsPage) {
@@ -392,11 +392,6 @@ function App() {
     const page: Page = { id: newPageId(), title: "系统设置", kind: "settings" };
     setPages(list => [...list, page]);
     setActivePageId(page.id);
-  };
-
-  /** Closing it is closing a page: the same rules apply, the same keys work. */
-  const closeSettings = () => {
-    if (settingsPage) closePage(settingsPage.id);
   };
 
   const closePage = (pageId: string) => {
@@ -627,9 +622,9 @@ function App() {
             { label: "串口", onSelect: () => split(menu.pageId, menu.paneId, "col", "serial") },
           ],
         },
-        // The last entry flips once the settings page exists: there is no point offering
-        // to open what is already open, and closing it belongs on the same menu.
-        settingsPage ? { label: "关闭设置", onSelect: closeSettings } : { label: "系统设置", onSelect: openSettings },
+        // The entry never changes shape: picking it again lands on the settings page instead
+        // of making a second one.
+        { label: "系统设置", onSelect: openSettings },
       ]
     : [];
 
