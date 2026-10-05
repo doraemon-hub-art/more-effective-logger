@@ -48,6 +48,7 @@ import {
   type SplitNode,
 } from "./layout/paneTree";
 import { neighborInDirection, paneBoxes, type Direction, type PaneBox } from "./layout/paneRects";
+import { log } from "./log";
 
 /**
  * A page is either a workspace (its own pane tree, its own focus) or the settings page.
@@ -194,7 +195,9 @@ function App() {
   // Whole-interface zoom: the webview's own page zoom, browser Ctrl+wheel semantics —
   // UI and terminal screens scale together and stay sharp, no cols/rows change.
   useEffect(() => {
-    void invoke("set_zoom", { scale: settings.zoom }).catch(() => {});
+    void invoke("set_zoom", { scale: settings.zoom }).catch(error => {
+      log.error("ui", `set_zoom(${settings.zoom}) failed: ${String(error)}`);
+    });
   }, [settings.zoom]);
 
   /** Installed monospace families; the settings page picks from these, not from a list
@@ -202,8 +205,13 @@ function App() {
   const [fonts, setFonts] = useState<string[]>([]);
   useEffect(() => {
     void invoke<string[]>("font_list")
-      .then(list => setFonts(list))
-      .catch(() => {});
+      .then(list => {
+        log.debug("font", `${list.length} families from the scan`);
+        setFonts(list);
+      })
+      .catch(error => {
+        log.warn("font", `font_list failed: ${String(error)}`);
+      });
   }, []);
 
   // A family that is not installed cannot be used: when the scan comes back without
@@ -256,11 +264,16 @@ function App() {
         const saved = await invoke<Record<string, unknown> | null>("settings_load");
         const patch = saved ? mergeSettings(saved) : {};
         if (saved) setSettings(current => ({ ...current, ...patch }));
+        log.info("app", saved ? "settings read" : "no settings file, using the defaults");
         if ((patch.startup ?? DEFAULT_SETTINGS.startup) === "restore") {
           restored = restoreSession(await invoke("session_load"));
+          log.info("app", restored ? `session restored: ${restored.pages.length} page(s)` : "no session to restore");
+        } else {
+          log.info("app", "startup setting asks for a fresh page");
         }
-      } catch {
+      } catch (error) {
         // A missing or unreadable file is not a failure: the defaults are always usable.
+        log.warn("app", `boot could not read the files: ${String(error)}`);
       }
       if (restored) {
         setPages(restored.pages);
@@ -281,7 +294,9 @@ function App() {
     const json = JSON.stringify(settings);
     if (json === writtenSettings.current) return;
     writtenSettings.current = json;
-    void invoke("settings_save", { settings }).catch(() => {});
+    void invoke("settings_save", { settings }).catch(error => {
+      log.error("store", `settings_save failed: ${String(error)}`);
+    });
   }, [booted, settings]);
 
   /**
@@ -298,7 +313,12 @@ function App() {
       const dir = await invoke<string | null>("terminal_cwd", { id: status.id }).catch(() => null);
       if (dir) cwdByPane[paneId] = dir;
     }
-    await invoke("session_save", { session: { pages, activePageId, focusByPage, cwdByPane } }).catch(() => {});
+    try {
+      await invoke("session_save", { session: { pages, activePageId, focusByPage, cwdByPane } });
+      log.info("session", `saved ${pages.length} page(s)`);
+    } catch (error) {
+      log.error("session", `session_save failed: ${String(error)}`);
+    }
   };
 
   // The session is written on the way out and nowhere else: the layout only ever matters at
@@ -311,7 +331,12 @@ function App() {
         event.preventDefault();
         try {
           await writeSession.current();
+        } catch (error) {
+          log.error("session", `session write on close failed: ${String(error)}`);
         } finally {
+          log.info("app", "closing");
+          // The window goes in a moment, so what is still queued leaves first.
+          await log.flush();
           await getCurrentWindow().destroy();
         }
       })

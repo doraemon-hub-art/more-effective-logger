@@ -15,8 +15,10 @@
 
 use serde_json::Value;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
+
+use crate::modules::logfile;
 
 /// The settings the app runs with.
 pub const SETTINGS: &str = "settings.json";
@@ -29,6 +31,14 @@ fn path(app: &AppHandle, file: &str) -> Result<PathBuf, String> {
     Ok(dir.join(file))
 }
 
+/// The message for a file that could not be used, kept in the log as well: the frontend
+/// shows it while the window is up, the log still has it once it is gone.
+fn failed(path: &Path, err: impl std::fmt::Display) -> String {
+    let message = format!("{}: {err}", path.display());
+    logfile::error("store", &message);
+    message
+}
+
 /// The file as the frontend left it; `None` when it does not exist yet. A file that does
 /// not parse is an error, so a broken one is never half-applied.
 pub fn load(app: &AppHandle, file: &str) -> Result<Option<Value>, String> {
@@ -36,9 +46,9 @@ pub fn load(app: &AppHandle, file: &str) -> Result<Option<Value>, String> {
     match fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text)
             .map(Some)
-            .map_err(|e| format!("{}: {e}", path.display())),
+            .map_err(|e| failed(&path, e)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("{}: {e}", path.display())),
+        Err(e) => Err(failed(&path, e)),
     }
 }
 
@@ -47,8 +57,8 @@ pub fn load(app: &AppHandle, file: &str) -> Result<Option<Value>, String> {
 pub fn save(app: &AppHandle, file: &str, value: &Value) -> Result<(), String> {
     let path = path(app, file)?;
     if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        fs::create_dir_all(dir).map_err(|e| failed(&path, e))?;
     }
-    let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
-    fs::write(&path, format!("{text}\n")).map_err(|e| format!("{}: {e}", path.display()))
+    let text = serde_json::to_string_pretty(value).map_err(|e| failed(&path, e))?;
+    fs::write(&path, format!("{text}\n")).map_err(|e| failed(&path, e))
 }

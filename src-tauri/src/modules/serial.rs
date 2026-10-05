@@ -19,6 +19,7 @@ use std::thread;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::modules::logfile;
 use crate::state::AppState;
 
 /// Event carrying received bytes; the payload names the pane it belongs to.
@@ -326,6 +327,7 @@ pub fn open(app: &AppHandle, id: &str, device: &str, baud: u32) -> Result<OpenIn
 
     let app_handle = app.clone();
     let session_id = id.to_string();
+    logfile::info("serial", format!("opened {id} {device} @{baud}"));
     thread::spawn(move || {
         let reason = reader_loop(&app_handle, &session_id, fd, &stop);
         // Unregister before closing: a write command either finds the session (fd still
@@ -334,6 +336,13 @@ pub fn open(app: &AppHandle, id: &str, device: &str, baud: u32) -> Result<OpenIn
             sessions.remove(&session_id);
         }
         unsafe { libc::close(fd) };
+        // A close asked for from the frontend has nothing to report; anything else is the
+        // device going away, and that is worth a line of its own.
+        if reason.is_empty() {
+            logfile::info("serial", format!("closed {session_id}"));
+        } else {
+            logfile::warn("serial", format!("{session_id} ended: {reason}"));
+        }
         let _ = app_handle.emit(
             EVT_EXIT,
             ExitPayload {
@@ -416,10 +425,14 @@ pub fn write(state: &AppState, id: &str, data: &[u8]) -> Result<(), String> {
                     revents: 0,
                 };
                 if unsafe { libc::poll(&mut poll_fd, 1, 500) } <= 0 {
+                    logfile::warn("serial", format!("write {id} timed out"));
                     return Err("write timed out".into());
                 }
             }
-            _ => return Err(err.to_string()),
+            _ => {
+                logfile::warn("serial", format!("write {id}: {err}"));
+                return Err(err.to_string());
+            }
         }
     }
     Ok(())

@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { log } from "../log";
 
 /** One scanned port, mirroring modules/serial.rs. */
 interface PortInfo {
@@ -117,6 +118,7 @@ function SerialPane({ paneId, focused = false, onLabel }: SerialPaneProps) {
       setExpanded(current => (current && list.some(p => p.device === current) ? current : null));
       setError(null);
     } catch (e) {
+      log.error("serial", `scan failed: ${String(e)}`);
       setError(String(e));
     }
   }, []);
@@ -214,6 +216,7 @@ function SerialPane({ paneId, focused = false, onLabel }: SerialPaneProps) {
         setOpen({ device, baud });
         onLabel?.(paneId, `${device} · ${baud}`);
       } catch (e) {
+        log.error("serial", `open ${device} failed: ${String(e)}`);
         setError(String(e));
       }
     },
@@ -256,6 +259,7 @@ function SerialPane({ paneId, focused = false, onLabel }: SerialPaneProps) {
       setInput("");
       setError(null);
     } catch (e) {
+      log.error("serial", `write failed: ${String(e)}`);
       setError(String(e));
     }
   }, [open, input, hexSend, crlf, paneId]);

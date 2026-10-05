@@ -16,6 +16,7 @@ use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize}
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::modules::logfile;
 use crate::state::AppState;
 
 /// Event carrying shell output; the payload carries the id of the pane it belongs to.
@@ -155,7 +156,8 @@ pub fn spawn(
     let mut cmd = CommandBuilder::new_default_prog();
     cmd.env("TERM", "xterm-256color");
     // A restored pane's shell starts where it was left.
-    if let Some(dir) = cwd.and_then(restored_dir) {
+    let start_dir = cwd.and_then(restored_dir);
+    if let Some(dir) = &start_dir {
         cmd.cwd(dir);
     }
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
@@ -181,12 +183,25 @@ pub fn spawn(
 
     let app_handle = app.clone();
     let session_id = id.to_string();
+    let pid_label = pid.map_or_else(|| "-".to_string(), |pid| pid.to_string());
+    let dir_label = start_dir
+        .as_ref()
+        .map_or_else(|| "-".to_string(), |dir| dir.display().to_string());
+    logfile::info(
+        "pty",
+        format!("spawned {id} {cols}x{rows} pid={pid_label} dir={dir_label}"),
+    );
     thread::spawn(move || {
         let mut buf = [0u8; 8192];
         let mut pending: Vec<u8> = Vec::new();
         loop {
             match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
+                // EOF means the shell is gone on its own.
+                Ok(0) => break,
+                Err(err) => {
+                    logfile::warn("pty", format!("{session_id} read: {err}"));
+                    break;
+                }
                 Ok(n) => {
                     pending.extend_from_slice(&buf[..n]);
                     // Forward whole UTF-8 sequences only: one multi-byte character can be
@@ -222,6 +237,7 @@ pub fn spawn(
                 let _ = session.child.wait();
             }
         }
+        logfile::info("pty", format!("{session_id} shell exited"));
         let _ = app_handle.emit(EVT_EXIT, ExitPayload { id: session_id });
     });
 

@@ -22,6 +22,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { terminalTheme, type ThemeName } from "../theme";
+import { log } from "../log";
 import "@xterm/xterm/css/xterm.css";
 
 /**
@@ -244,6 +245,7 @@ function TerminalView({
         term.focus();
         void invoke("pty_resize", { id: sessionId, cols: term.cols, rows: term.rows }).catch(() => {});
       } catch (error) {
+        log.error("pty", `spawn_terminal failed: ${String(error)}`);
         report({ running: false, failure: String(error) });
         term.write(`\r\n\x1b[31m${String(error)}\x1b[0m\r\n`);
       }

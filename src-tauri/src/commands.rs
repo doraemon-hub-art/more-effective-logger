@@ -13,6 +13,7 @@
  * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
  */
 use crate::modules::fonts;
+use crate::modules::logfile;
 use crate::modules::pty;
 use crate::modules::serial;
 use crate::modules::store;
@@ -26,6 +27,13 @@ pub async fn app_ping(state: State<'_, AppState>) -> Result<String, String> {
     // Also verify global state is mounted (lock the placeholder field)
     let _guard = state.placeholder.lock().map_err(|e| e.to_string())?;
     Ok("Pong from Rust!".into())
+}
+
+/// Lines the frontend logged (its console output and uncaught errors), landing in the same
+/// file as the backend's own lines
+#[tauri::command]
+pub async fn log_write(lines: Vec<logfile::Entry>) {
+    logfile::write_batch(&lines);
 }
 
 /// Spawn a shell in a new pty under the given pane id; `cwd` is where a restored pane
@@ -44,6 +52,7 @@ pub async fn spawn_terminal(
 /// Apply the whole-interface zoom level from the settings page (browser-style page zoom)
 #[tauri::command]
 pub async fn set_zoom(app: AppHandle, scale: f64) -> Result<(), String> {
+    logfile::debug("ui", format!("zoom {scale}"));
     let webview = app
         .get_webview_window("main")
         .ok_or_else(|| "no main window".to_string())?;
@@ -80,7 +89,10 @@ pub async fn pty_resize(
 pub async fn pty_kill(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let mut sessions = state.ptys.lock().map_err(|e| e.to_string())?;
     match sessions.get_mut(&id) {
-        Some(session) => session.kill(),
+        Some(session) => {
+            logfile::info("pty", format!("killing {id}"));
+            session.kill()
+        }
         None => Ok(()),
     }
 }
