@@ -11,11 +11,13 @@
  * backs out without splitting.
  */
 import { useEffect, useState } from "react";
+import type { PaneType } from "../layout/paneTree";
 
 /** What the new half can be; the labels match the context menu's submenu. */
-const CHOICES: Array<{ id: "term" | "serial"; label: string }> = [
+const CHOICES: Array<{ id: PaneType; label: string }> = [
   { id: "term", label: "终端" },
   { id: "serial", label: "串口" },
+  { id: "log", label: "日志" },
 ];
 
 export interface PaneTypeMenuProps {
@@ -23,7 +25,7 @@ export interface PaneTypeMenuProps {
   x: number;
   y: number;
   /** The type was picked: the app performs the split. */
-  onPick: (type: "term" | "serial") => void;
+  onPick: (type: PaneType) => void;
   /** Esc, or a click outside: no split happens. */
   onCancel: () => void;
 }

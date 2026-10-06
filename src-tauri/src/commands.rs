@@ -14,6 +14,7 @@
  */
 use crate::modules::fonts;
 use crate::modules::logfile;
+use crate::modules::logger;
 use crate::modules::pty;
 use crate::modules::serial;
 use crate::modules::store;
@@ -171,4 +172,37 @@ pub async fn serial_write(
 #[tauri::command]
 pub async fn serial_close(state: State<'_, AppState>, id: String) -> Result<(), String> {
     serial::close(&state, &id)
+}
+
+/// Read a local log file once: the pane freezes on what the file held at this moment
+#[tauri::command]
+pub async fn log_open_file(path: String) -> Result<logger::Snapshot, String> {
+    logger::read_snapshot(&path)
+}
+
+/// Completion candidates for the path typed so far (the pane's local file field)
+#[tauri::command]
+pub async fn log_complete(prefix: String) -> Result<Vec<logger::Candidate>, String> {
+    Ok(logger::complete(&prefix))
+}
+
+/// Follow a remote file over SSH under the given pane id: whole lines arrive as
+/// `log-data` events, the connection state as `log-state`, the end as `log-exit`
+#[tauri::command]
+pub async fn log_connect(
+    app: AppHandle,
+    id: String,
+    host: String,
+    user: String,
+    password: String,
+    port: u16,
+    path: String,
+) -> Result<(), String> {
+    logger::connect(&app, &id, &host, port, &user, &password, &path)
+}
+
+/// Stop the follow behind a pane; its thread closes the session and emits `log-exit`
+#[tauri::command]
+pub async fn log_close(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    logger::close(&state, &id)
 }

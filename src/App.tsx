@@ -22,6 +22,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import TermPane from "./components/TermPane";
 import SerialPane from "./components/SerialPane";
+import LogPane from "./components/LogPane";
 import { fontStack, type TerminalStatus } from "./components/TerminalView";
 import StatusBar, { type SysStats } from "./components/StatusBar";
 import ContextMenu, { type MenuItem } from "./components/ContextMenu";
@@ -127,7 +128,7 @@ function restoreTree(node: unknown): PaneNode | null {
   }
   const leaf = node as PaneLeaf;
   if (leaf.kind !== "pane" || typeof leaf.id !== "string") return null;
-  if (leaf.type !== "term" && leaf.type !== "serial") return null;
+  if (leaf.type !== "term" && leaf.type !== "serial" && leaf.type !== "log") return null;
   return { kind: "pane", id: leaf.id, type: leaf.type };
 }
 
@@ -613,6 +614,7 @@ function App() {
           items: [
             { label: "终端", onSelect: () => split(menu.pageId, menu.paneId, "row", "term") },
             { label: "串口", onSelect: () => split(menu.pageId, menu.paneId, "row", "serial") },
+            { label: "日志", onSelect: () => split(menu.pageId, menu.paneId, "row", "log") },
           ],
         },
         {
@@ -620,6 +622,7 @@ function App() {
           items: [
             { label: "终端", onSelect: () => split(menu.pageId, menu.paneId, "col", "term") },
             { label: "串口", onSelect: () => split(menu.pageId, menu.paneId, "col", "serial") },
+            { label: "日志", onSelect: () => split(menu.pageId, menu.paneId, "col", "log") },
           ],
         },
         // The entry never changes shape: picking it again lands on the settings page instead
@@ -668,10 +671,15 @@ function App() {
                   setMenu({ x: event.clientX, y: event.clientY, pageId: page.id, paneId })
                 }
                 onResizeSplit={(path, ratio) => resizeSplit(page.id, path, ratio)}
-                renderPane={(pane, isFocused) =>
-                  pane.type === "serial" ? (
-                    <SerialPane paneId={pane.id} focused={isFocused} onLabel={reportPaneLabel} />
-                  ) : (
+                renderPane={(pane, isFocused) => {
+                  // A terminal reports user@host: cwd; the other kinds say what they are.
+                  if (pane.type === "serial") {
+                    return <SerialPane paneId={pane.id} focused={isFocused} onLabel={reportPaneLabel} />;
+                  }
+                  if (pane.type === "log") {
+                    return <LogPane paneId={pane.id} focused={isFocused} onLabel={reportPaneLabel} />;
+                  }
+                  return (
                     <TermPane
                       paneId={pane.id}
                       focused={isFocused}
@@ -681,8 +689,8 @@ function App() {
                       cwd={startCwd[pane.id]}
                       onStatus={reportPaneStatus}
                     />
-                  )
-                }
+                  );
+                }}
               />
             </div>
           );

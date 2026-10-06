@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use crate::modules::logger::LogSession;
 use crate::modules::pty::PtySession;
 use crate::modules::serial::SerialSession;
 
@@ -24,4 +25,6 @@ pub struct AppState {
     pub ptys: Mutex<HashMap<String, PtySession>>,
     /// Open serial ports, keyed by the pane id the frontend uses.
     pub serials: Mutex<HashMap<String, SerialSession>>,
+    /// Running remote log follows, keyed by the pane id the frontend uses.
+    pub logs: Mutex<HashMap<String, LogSession>>,
 }

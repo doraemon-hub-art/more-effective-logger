@@ -1,15 +1,15 @@
 <!--
  * @file pane_log.html
- * @brief Concept mock: single log window (pane) style — content regex filter, column header
+ * @brief Concept mock: log pane — one pane, two ways to read (local file / remote tail)
  * @author doraemon-hub-art <1660219734@qq.com>
- * @date 2026-10-01
+ * @date 2026-10-06
  * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<title>melogger — 日志窗口样式</title>
+<title>melogger — 日志窗口</title>
 <style>
   :root {
     /* Catppuccin Mocha */
@@ -27,6 +27,7 @@
     --peach:   #fab387;
     --yellow:  #f9e2af;
     --red:     #f38ba8;
+    --green:   #a6e3a1;
 
     --ui: "Noto Sans CJK SC", "Source Han Sans SC", "Ubuntu", sans-serif;
     --mono: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Noto Sans Mono CJK SC", monospace;
@@ -53,115 +54,294 @@
     box-shadow: 0 0 0 1px rgba(137,180,250,.35);
   }
 
-  /* 标题栏：类型标记 + 来源 · 模式 …… 速率 */
+  /* 标题栏：类型标记 + 来源 · 模式 …… 行数体积 / 速率 */
   .pane-head {
-    flex: 0 0 26px;
-    display: flex; align-items: center; gap: 8px;
-    padding: 0 8px;
+    flex: 0 0 22px;
+    display: flex; align-items: center; gap: 6px;
+    padding: 0 6px;
     background: #1b2133;
     border-bottom: 1px solid var(--surface0);
-    font-size: 11.5px;
+    font-size: 11px;
   }
   .tag {
-    font-family: var(--mono); font-size: 10px; letter-spacing: .5px;
-    padding: 1px 5px; border-radius: 3px;
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .5px;
+    padding: 1px 4px; border-radius: 3px;
     background: rgba(203,166,247,.16); color: var(--mauve);
   }
-  .tag.mode { background: rgba(137,220,235,.14); color: var(--sky); }
-  .tag.mode.read { background: rgba(250,179,135,.14); color: var(--peach); }
-  .who { font-family: var(--mono); font-size: 11px; color: var(--text); }
+  .tag.mode.local  { background: rgba(250,179,135,.14); color: var(--peach); }
+  .tag.mode.remote { background: rgba(137,220,235,.14); color: var(--sky); }
+  .who { font-family: var(--mono); font-size: 10.5px; color: var(--text); }
   .pane-head .spacer { flex: 1; }
-  .state { font-family: var(--mono); font-size: 10.5px; color: var(--overlay0); display: flex; align-items: center; gap: 6px; }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .state { font-family: var(--mono); font-size: 10px; color: var(--overlay0); display: flex; align-items: center; gap: 5px; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
 
-  /* 过滤条：过滤条件（按内容匹配的正则）…… 匹配行/总行数 · 跟随状态 */
+  /* 读取那一段：来源两格（点它切方式）+ 那一种方式要的字段。两种方式只有这一段不同 */
+  .form {
+    flex: none;
+    position: relative;   /* 补全浮层挂在这里，也要盖住下面的过滤条与行区 */
+    z-index: 3;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--surface0);
+    background: #1b1b2b;
+  }
+  .srcs { display: flex; gap: 6px; margin-bottom: 8px; }
+  .src { padding: 2px 10px; border-radius: 3px; border: 1px solid var(--surface0); color: var(--subtext0);
+         background: transparent; cursor: pointer;
+         font-family: var(--mono); font-size: 11px; }
+  .src.on { border-color: var(--green); color: var(--green); background: rgba(166,227,161,.1); }
+  .way.off { display: none; }
+
+  /* 本地：一行路径，一边打一边补全 */
+  .field { position: relative; display: flex; align-items: center; gap: 7px; }
+  .field .k { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--overlay0); }
+  .field .in {
+    flex: 1; min-width: 0;
+    padding: 3px 7px; border-radius: 3px;
+    border: 1px solid var(--surface0); background: rgba(30,30,46,.6);
+    font-family: var(--mono); font-size: 11.5px; color: var(--subtext1);
+  }
+  .field .in.blank { color: var(--overlay0); }
+  .field .in.focus { border-color: var(--blue); }
+
+  /* 补全候选：浮在输入行下面，不推挤下一条；打进去的那截暗、补上的那截亮 */
+  .sugg {
+    position: absolute;
+    left: 44px; right: 0; top: 25px;
+    border: 1px solid var(--surface0); border-radius: 4px;
+    background: var(--mantle);
+    box-shadow: 0 6px 20px rgba(0,0,0,.45);
+    padding: 3px 0;
+    font-family: var(--mono); font-size: 11px;
+  }
+  .sugg .opt { display: flex; align-items: center; gap: 8px; padding: 3px 8px; color: var(--subtext1); }
+  .sugg .opt.on { background: var(--surface0); color: var(--text); }
+  .sugg .typed { color: var(--overlay0); }
+  .sugg .kind { margin-left: auto; font-size: 9.5px; color: var(--overlay0); }
+
+  /* 远程：字段横排，收在两行；文件那格吃掉剩下的宽度 */
+  .frow { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 14px; }
+  .frow + .frow { margin-top: 7px; }
+  .frow .field { flex: none; }
+  .w-ip { width: 132px; }
+  .w-user { width: 104px; }
+  .w-pass { width: 126px; }
+  .w-port { width: 84px; }
+  .field.grow { flex: 1; min-width: 220px; }
+
+  .actions { display: flex; gap: 8px; margin-left: auto; }
+  .btn {
+    padding: 3px 16px; border-radius: 4px; cursor: pointer;
+    font-family: var(--mono); font-size: 11px;
+    border: 1px solid var(--green); color: var(--green); background: rgba(166,227,161,.12);
+  }
+  .btn.idle { border-color: var(--surface0); color: var(--subtext0); background: transparent; }
+
+  /* 过滤条：认正则，只画命中的行；有条件时右端给 显示 x/见过的行数；再右 清空 / 跟随 */
   .filter {
     flex: 0 0 22px;
-    display: flex; align-items: center; gap: 10px;
-    padding: 0 10px;
+    display: flex; align-items: center; gap: 7px;
+    padding: 0 8px;
     background: #1b1b2b;
     border-bottom: 1px solid var(--surface0);
     font-family: var(--mono); font-size: 10.5px; color: var(--overlay0);
   }
   .filter .q { color: var(--yellow); }
   .filter .spacer { flex: 1; }
-  .filter .on { color: var(--green); }
-
-  /* 列表标题：跟下面的行共用同一套列宽，保证对齐 */
-  .list-head {
-    flex: 0 0 20px;
-    display: flex; align-items: center;
-    padding: 0 10px;
-    background: #1b1b2b;
-    border-bottom: 1px solid var(--surface0);
-    font-family: var(--mono); font-size: 10.5px; color: var(--overlay0);
+  /* 开关按钮：灭 = 灰边，亮 = 绿边绿字（跟串口面板那套 chip 同一个口径） */
+  .chip {
+    padding: 1px 7px; border-radius: 3px;
+    border: 1px solid var(--surface0); color: var(--subtext0); background: transparent;
+    cursor: pointer; font: inherit;
   }
-  .list-head .t   { flex: 0 0 62px; }
-  .list-head .lv  { flex: 0 0 52px; }
-  .list-head .src { flex: 0 0 56px; }
-  .list-head .msg { flex: 1; }
+  .chip.on { border-color: var(--green); color: var(--green); background: rgba(166,227,161,.1); }
 
-  /* 行：时间 / 级别 / 来源 / 内容 */
+  /* 行：一行日志就是一行，原样铺满整幅，超长在行尾截断 */
   .pane-body {
     flex: 1;
     min-height: 0;
-    overflow: hidden;
-    padding: 6px 0;
+    overflow: auto;
+    padding: 0;
     font-family: var(--mono);
     font-size: 11.5px;
     line-height: 19px;
     color: var(--subtext1);
   }
-  .row { display: flex; padding: 0 10px; white-space: nowrap; }
+  /* 一行与下一行之间一条发丝线：一行到哪儿结束一眼看得出来 */
+  .row {
+    width: max-content;
+    min-width: 100%;
+    padding: 0 10px;
+    border-bottom: 1px solid rgba(49,50,68,.6);
+    white-space: pre;
+  }
   .row.hit { background: rgba(249,226,175,.06); }
-  .row .t   { flex: 0 0 62px; color: var(--overlay0); }
-  .row .lv  { flex: 0 0 52px; font-weight: 600; }
-  .row .lv.I { color: var(--blue); }
-  .row .lv.W { color: var(--yellow); }
-  .row .lv.E { color: var(--red); }
-  .row .lv.D { color: var(--overlay0); }
-  .row .src { flex: 0 0 56px; color: var(--subtext0); }
-  .row .msg { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  /* 搜索停在的那一行：比其它命中亮一档 */
+  .row.hit.now { background: rgba(249,226,175,.18); }
+
+  /* 搜索行：贴在面板最下面，按 `/` 才出现 */
+  .srch {
+    flex: 0 0 22px;
+    display: flex; align-items: center; gap: 7px;
+    padding: 0 8px;
+    background: #1b1b2b;
+    border-top: 1px solid var(--surface0);
+    font-family: var(--mono); font-size: 10.5px; color: var(--overlay0);
+  }
+  .srch .pat { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--yellow); }
+  .srch .at { flex: none; }
 </style>
 </head>
 <body>
 
   <!--
-    同一个日志组件，两种源（模式只是参数，不是两套 UI）：
-      远程 tail -f ：模式标记 [远程]（青 --sky），标题栏右端 ● 速率，过滤条右端 跟随中
-      读取文件     ：模式标记 [文件]（橙 --peach），标题栏右端 行数 · 体积，过滤条右端 已读全部
-    下面这版画的是「远程 tail -f」；其余部分（过滤条、列表标题、四列行）两种模式完全共用。
+    一个日志面板，两种读取方式（点左上角「本地文件」/「远程主机」切）：
+      本地文件：路径直接在输入框里打，一边打一边扫本机路径出候选（浮层，不推挤下一条，
+                打进去的那截暗、补上的那截亮）。候选里**有一条是选中的**（↑ / ↓ 换，
+                鼠标划过也换），**Tab 就是「要这一条」** —— 不用鼠标，也不许把焦点挪到下一个
+                字段（没候选可补的时候 Tab 才照常走）；选中的是目录就接着往下一层补，是文件就
+                算填完了。Esc 收起候选。路径填完整、能打开就直接读进来渲染，没有按钮、
+                也没有文件选择框；读完定格，文件之后再涨一律不管。
+      远程主机：五个字段横排收在两行（IP 用户名 密码 端口 ‖ 文件 + 一个按钮；密码不遮，
+                明文显示）。那一个按钮管两头：没连上是「连接」（绿），连上之后变「断开」（灰），
+                连接 = 建立 SSH 起 tail -f（从连上那一刻往后新增的字节，之前的不要），
+                断开 = 停掉并回到没连上的样子。
+    两种方式共用的，是下面两块：
+      · 过滤条（认正则）：**只画命中的行**，右端在有条件时才出现 `显示 x/y`（y = 这面板见过多少行），
+        再右 「清空」+「跟随」两个按钮 —— 跟随 = 有新内容就停在最下方；**默认关着，按钮上写的是
+        点下去会做的事**：关着写「跟随」、开着写「自由」。稿子里过滤条件 `closed|failed|rotated|resum`
+        命中了 11 行里的 6 行，所以行区就只剩这 6 行；本地那种方式删掉条件会全回来，远程那种
+        被筛掉的就不留了。条件写得不合法时等于没过滤、字转红。
+      · 行区 + 搜索行：一行日志就是一行，整行原样，**行与行之间一条发丝线**，长行横向滚不换行。
+        按 `/` 在**面板底部**出一条 vim 那样的搜索行，回车确认；之后 `n` / `N` 上一个 / 下一个命中，
+        命中的行铺一层淡黄（`--yellow` 6%），**正停着的那一行再亮一档**（18%），最右读数是「第几个/共几个」。
+        它只在画面里有的行之间跳 —— 被过滤掉的行跳不到。
+    下面这两块两种方式一致，切方式时它们不动。切方式跟着变的只有：模式标记、来源串、
+    标题栏右端（行数体积 / 速率）、跟随按钮的开关（本地是一次性快照、没有新内容可跟，所以灭着）。
+    切来源那个小脚本只为演示，不是概念稿的常态（同 settings_page.html 的锚点跳转）。
   -->
 
   <div class="pane">
     <div class="pane-head">
       <span class="tag">LOG</span>
-      <span class="tag mode">远程</span>
-      <span class="who">edge-a:/var/log/app.log · tail -f</span>
+      <span class="tag mode local" id="mode">文件</span>
+      <span class="who" id="who">/var/log/app.log</span>
       <span class="spacer"></span>
-      <span class="state"><span class="dot"></span>3 行/秒</span>
+      <span class="state" id="state">11 行 · 1.0 KB</span>
     </div>
+
+    <div class="form">
+      <div class="srcs">
+        <button type="button" class="src on" data-way="local">本地文件</button>
+        <button type="button" class="src" data-way="remote">远程主机</button>
+      </div>
+
+      <div class="way" data-way="local">
+        <div class="field">
+          <span class="k">文件</span>
+          <span class="in focus">/var/log/ap</span>
+          <div class="sugg">
+            <div class="opt on"><span><span class="typed">/var/log/ap</span>p.log</span><span class="kind">文件</span></div>
+            <div class="opt"><span><span class="typed">/var/log/ap</span>p.log.1</span><span class="kind">文件</span></div>
+            <div class="opt"><span><span class="typed">/var/log/ap</span>p-2026-10-05.log</span><span class="kind">文件</span></div>
+            <div class="opt"><span><span class="typed">/var/log/ap</span>t/</span><span class="kind">目录</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="way off" data-way="remote">
+        <div class="frow">
+          <div class="field w-ip"><span class="k">IP</span><span class="in">198.51.100.7</span></div>
+          <div class="field w-user"><span class="k">用户名</span><span class="in">dev</span></div>
+          <div class="field w-pass"><span class="k">密码</span><span class="in">dev123</span></div>
+          <div class="field w-port"><span class="k">端口</span><span class="in">22</span></div>
+        </div>
+        <div class="frow">
+          <div class="field grow"><span class="k">文件</span><span class="in">/var/log/app.log</span></div>
+          <div class="actions">
+            <button type="button" class="btn" id="link">连接</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="filter">
-      <span>内容</span><span class="q">closed|failed|rotated|resum</span>
+      <span>过滤</span><span class="q">closed|failed|rotated|resum</span>
       <span class="spacer"></span>
-      <span>匹配 6/11</span>
-      <span class="on">跟随中</span>
+      <span>显示 6/11</span>
+      <button type="button" class="chip" id="clear">清空</button>
+      <button type="button" class="chip" id="follow">跟随</button>
     </div>
-    <div class="list-head"><span class="t">时间</span><span class="lv">级别</span><span class="src">来源</span><span class="msg">内容</span></div>
     <div class="pane-body">
-      <div class="row"><span class="t">09:41:02</span><span class="lv I">INFO</span><span class="src">pty</span><span class="msg">session spawned (pid 41288, cols 96 rows 28)</span></div>
-      <div class="row"><span class="t">09:41:03</span><span class="lv I">INFO</span><span class="src">ssh</span><span class="msg">connected host=198.51.100.7:22 (rtt 31ms)</span></div>
-      <div class="row hit"><span class="t">09:41:07</span><span class="lv W">WARN</span><span class="src">tail</span><span class="msg">file rotated, reopening /var/log/app.log</span></div>
-      <div class="row hit"><span class="t">09:41:12</span><span class="lv E">ERROR</span><span class="src">ssh</span><span class="msg">channel closed: broken pipe, retry in 5s (2/5)</span></div>
-      <div class="row hit"><span class="t">09:41:17</span><span class="lv I">INFO</span><span class="src">ssh</span><span class="msg">reconnected, resuming tail -f</span></div>
-      <div class="row"><span class="t">09:41:19</span><span class="lv W">WARN</span><span class="src">parse</span><span class="msg">line 10432 too long (8192B), truncated</span></div>
-      <div class="row"><span class="t">09:41:21</span><span class="lv D">DEBUG</span><span class="src">filter</span><span class="msg">11 lines in buffer, 6 matched</span></div>
-      <div class="row hit"><span class="t">09:41:23</span><span class="lv E">ERROR</span><span class="src">ssh</span><span class="msg">auth failed for user=root</span></div>
-      <div class="row"><span class="t">09:41:24</span><span class="lv I">INFO</span><span class="src">ssh</span><span class="msg">retrying with publickey auth</span></div>
-      <div class="row hit"><span class="t">09:41:26</span><span class="lv W">WARN</span><span class="src">pty</span><span class="msg">resize ignored: pty already closed (pid 41288)</span></div>
-      <div class="row hit"><span class="t">09:41:28</span><span class="lv I">INFO</span><span class="src">ssh</span><span class="msg">connected, tail resumed at offset 2981442</span></div>
+      <div class="row hit">2026-10-05 09:41:07.301 WARN  tail     file rotated, reopening /var/log/app.log</div>
+      <div class="row hit">2026-10-05 09:41:12.640 ERROR ssh      channel closed: broken pipe, retry in 5s (2/5)</div>
+      <div class="row hit">2026-10-05 09:41:17.905 INFO  ssh      reconnected, resuming tail -f</div>
+      <div class="row hit now">2026-10-05 09:41:23.449 ERROR ssh      auth failed for user=root</div>
+      <div class="row hit">2026-10-05 09:41:26.730 WARN  pty      resize ignored: pty already closed (pid 41288)</div>
+      <div class="row hit">2026-10-05 09:41:28.356 INFO  ssh      connected, tail resumed at offset 2981442</div>
+    </div>
+
+    <div class="srch">
+      <span>/</span><span class="pat">ssh</span><span class="at">3/4</span>
     </div>
   </div>
+
+  <script>
+    // 两格切读取方式：切的是「读取段」+ 头部右端那几个跟着方式变的读数。
+    const WAYS = {
+      local: {
+        cls: "local",
+        mode: "文件",
+        who: "/var/log/app.log",
+        state: "11 行 · 1.0 KB",
+        follow: false,
+      },
+      remote: {
+        cls: "remote",
+        mode: "远程",
+        who: "dev@198.51.100.7:/var/log/app.log",
+        state: '<span class="dot"></span>3 行/秒',
+        follow: false,
+      },
+    };
+
+    const chips = [...document.querySelectorAll(".src")];
+    const ways = [...document.querySelectorAll(".way")];
+    const mode = document.getElementById("mode");
+    const who = document.getElementById("who");
+    const state = document.getElementById("state");
+    const follow = document.getElementById("follow");
+    const link = document.getElementById("link");
+
+    function pick(name) {
+      const way = WAYS[name];
+      chips.forEach(chip => chip.classList.toggle("on", chip.dataset.way === name));
+      ways.forEach(box => box.classList.toggle("off", box.dataset.way !== name));
+      mode.textContent = way.mode;
+      mode.className = `tag mode ${way.cls}`;
+      who.textContent = way.who;
+      state.innerHTML = way.state;
+      setFollow(way.follow);
+      setLink(false);
+    }
+
+    // 连接/断开是同一个按钮：连上之后它写「断开」并转灰，断开之后写回「连接」。演示里点它
+    // 只翻这个状态（真面板是点下去真连、真断）。
+    function setLink(on) {
+      link.classList.toggle("idle", on);
+      link.textContent = on ? "断开" : "连接";
+    }
+
+    // 跟随 = 有新内容就停在最下方；关着的时候按钮写「跟随」（点它就是去跟随），
+    // 开着的时候写「自由」（点它就是松开）。默认关着。
+    function setFollow(on) {
+      follow.classList.toggle("on", on);
+      follow.textContent = on ? "自由" : "跟随";
+    }
+
+    chips.forEach(chip => chip.addEventListener("click", () => pick(chip.dataset.way)));
+    follow.addEventListener("click", () => setFollow(!follow.classList.contains("on")));
+    link.addEventListener("click", () => setLink(!link.classList.contains("idle")));
+  </script>
 
 </body>
 </html>
