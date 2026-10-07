@@ -1,0 +1,66 @@
+#/**
+# * @file Dockerfile.release
+# * @author doraemon-hub-art (1660219734@qq.com)
+# * @brief Build the package on Jammy, so the binary asks for no glibc newer than 2.35
+# * @date 2026-10-07
+# *
+# * @copyright Copyright (c) 2026
+# */
+
+# The distribution the package is built on decides the glibc the binary asks for: every imported
+# symbol is bound to the version the build machine's libc carries. Built on 24.04 the binary wants
+# GLIBC_2.38 and GLIBC_2.39, and neither is there on Jammy. Jammy — glibc 2.35 — is the oldest
+# distribution this is meant to run on, so it is what it is built on. Glibc only goes forwards:
+# one package built here runs on Jammy and on everything newer.
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# The Rust side links WebKitGTK and GTK, so their development packages are needed here. Jammy
+# carries webkit2gtk 4.1, which is what Tauri v2 asks for. libssl-dev is for ssh2, which links
+# OpenSSL; dpkg-dev and fakeroot are what the deb bundler shells out to, and patchelf comes along
+# because the bundler looks for it.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        build-essential cmake pkg-config file ca-certificates curl wget xz-utils perl python3-minimal \
+        libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev libssl-dev \
+        dpkg-dev fakeroot patchelf \
+ && rm -rf /var/lib/apt/lists/*
+
+# Node builds the frontend. Only the built assets travel in the package — no native code — so the
+# glibc Node itself is linked against has no say in what the package asks for.
+ENV NODE_VERSION=22.23.1
+RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz \
+ && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+ && rm /tmp/node.tar.xz
+
+# The toolchain the manifests are written against, baked into the image so a release never waits
+# on a download of its own.
+ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh \
+ && sh /tmp/rustup-init.sh -y --no-modify-path --profile minimal --default-toolchain 1.97.1 \
+ && rm /tmp/rustup-init.sh
+
+# Dependency graphs, not sources: a release bind-mounts the checkout over /work. Both package
+# managers are left with their download caches full, so a release does not sit waiting on the
+# registries; whatever the lockfiles gain later is fetched on the next run.
+ENV npm_config_cache=/usr/local/npm-cache
+WORKDIR /tmp/warm
+COPY package.json package-lock.json ./
+RUN npm ci >/dev/null 2>&1 && cd / && rm -rf /tmp/warm
+
+# The manifests go in a directory of their own and come out again: cargo walks up from the build
+# directory looking for a workspace, and a manifest on that walk with no sources left beside it is
+# a hard error. The stub sources only exist so that cargo can read the workspace.
+WORKDIR /tmp/deps
+COPY Cargo.toml Cargo.lock ./
+COPY src-tauri/Cargo.toml src-tauri/
+RUN mkdir -p src-tauri/src \
+ && echo 'fn main() {}' > src-tauri/src/main.rs \
+ && echo '' > src-tauri/src/lib.rs \
+ && echo 'fn main() {}' > src-tauri/build.rs \
+ && cargo fetch \
+ && cd / && rm -rf /tmp/deps
+
+WORKDIR /work

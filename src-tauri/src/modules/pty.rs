@@ -92,7 +92,7 @@ impl PtySession {
         let path = path.to_string_lossy().to_string();
         let home = std::env::var("HOME").ok().filter(|home| !home.is_empty());
         Some(match home {
-            // Only a path boundary shortens: `/home/xuanother` is not under `/home/xuan`.
+            // Only a path boundary shortens: `/home/dev-box-2` is not under `/home/dev-box`.
             Some(home) if path == home => "~".to_string(),
             Some(home) => match path.strip_prefix(&format!("{home}/")) {
                 Some(rest) => format!("~/{rest}"),

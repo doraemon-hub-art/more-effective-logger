@@ -7,6 +7,10 @@ target/
 node_modules/
 dist/
 
+# Python
+__pycache__/
+*.pyc
+
 # Tauri generated
 /src-tauri/gen/schemas
 

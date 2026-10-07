@@ -3,6 +3,8 @@ name = "melogger"
 version = "0.1.0"
 description = "Developer Workspace Skeleton - Tauri v2 minimal full-stack scaffold"
 authors = ["doraemon-hub-art"]
+# GPL-3.0-only: whoever takes this keeps it open, no closed forks. See LICENSE.
+license = "GPL-3.0-only"
 edition = "2021"
 rust-version = "1.77"
 

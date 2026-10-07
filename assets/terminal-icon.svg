@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- melogger：>_< 一块终端面板；颜色取界面 token -->
+  <rect x="52" y="52" width="920" height="920" rx="200" fill="#1e1e2e"/>
+  <rect x="62" y="62" width="900" height="900" rx="190" fill="none" stroke="#313244" stroke-width="20"/>
+  <path d="M235 376 L387 512 L235 648" fill="none" stroke="#a6e3a1" stroke-width="84"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="431" y="608" width="160" height="42" rx="14" fill="#a6e3a1"/>
+  <path d="M789 376 L637 512 L789 648" fill="none" stroke="#a6e3a1" stroke-width="84"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
