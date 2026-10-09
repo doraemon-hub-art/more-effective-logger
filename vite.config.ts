@@ -11,6 +11,13 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    // xterm.js ships pre-minified; letting esbuild minify it again corrupts its
+    // parser (requestMode references a renamed-away binding), which crashes on
+    // every DECRQM query (nvim 0.12+ sends those on startup). Terser handles
+    // double-minified input correctly.
+    minify: "terser",
+  },
   clearScreen: false,
   server: {
     port: 1420,
