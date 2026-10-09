@@ -551,7 +551,7 @@ function App() {
         else if (key === "pagedown") handle(() => actions.current.switchPage(1));
         return;
       }
-      if (!event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+      if (!event.ctrlKey || event.altKey || event.metaKey) return;
       // Ctrl+= / Ctrl+- / Ctrl+0: zoom the focused terminal pane. The physical plus key
       // sends "=", so both spellings are taken.
       if (key === "=" || key === "+") {
