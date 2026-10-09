@@ -1,6 +1,6 @@
 [package]
 name = "melogger"
-version = "0.1.0"
+version = "0.1.1"
 description = "Developer Workspace Skeleton - Tauri v2 minimal full-stack scaffold"
 authors = ["doraemon-hub-art"]
 # GPL-3.0-only: whoever takes this keeps it open, no closed forks. See LICENSE.
