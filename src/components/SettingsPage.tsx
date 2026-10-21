@@ -389,6 +389,11 @@ function SettingsPage({ settings, onChange, fonts }: SettingsPageProps) {
               <Key>Shift</Key>
               <Key>W</Key>
             </Row>
+            <Row label="关闭面板">
+              <Key>Ctrl</Key>
+              <Key>Shift</Key>
+              <Key>Q</Key>
+            </Row>
             <Row label="面板焦点">
               <Key>Alt</Key>
               <Key>H J K L</Key>

@@ -83,12 +83,10 @@ function newPageId(): string {
   return `page-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Ctrl+Shift+arrows split the focused pane; these are the arrow spellings in `event.key`. */
-const ARROW_DIRECTION: Record<string, Direction | undefined> = {
-  arrowleft: "left",
-  arrowright: "right",
-  arrowup: "up",
-  arrowdown: "down",
+/** Ctrl+Shift+j / Ctrl+Shift+l split the focused pane: down (column) and right (row). */
+const SPLIT_DIRECTION: Record<string, SplitDir | undefined> = {
+  j: "col",
+  l: "row",
 };
 
 /** Alt+h/j/k/l move pane focus (vim style); these are the letter spellings in `event.key`. */
@@ -441,10 +439,11 @@ function App() {
         return result.removed ? { ...page, tree: result.tree } : page;
       }),
     );
-    // Focus falls to whatever the page's first pane is after the removal.
+    // The page's focus pointed at a pane that may be gone; a stale id falls back to the
+    // page's first pane wherever the focus is read.
     setFocusByPage(current => {
       const kept = { ...current };
-      delete kept[paneId];
+      delete kept[pageId];
       return kept;
     });
   };
@@ -559,6 +558,8 @@ function App() {
         else if (key === "pagedown") handle(() => actions.current.switchPage(1));
         return;
       }
+      // Letters only reach the page with Ctrl+Shift held — fcitx's IM module takes them
+      // otherwise — so every Ctrl shortcut below lives on Shift.
       if (!event.ctrlKey || event.altKey || event.metaKey) return;
       // Ctrl+= / Ctrl+- / Ctrl+0: zoom the focused terminal pane. The physical plus key
       // sends "=", so both spellings are taken.
@@ -578,12 +579,12 @@ function App() {
         return;
       }
       if (!event.shiftKey) return;
-      // Ctrl+Shift+arrows: split the focused pane. The menu lands where the new half
-      // will appear — to the right / below the divider.
-      const dir = ARROW_DIRECTION[key];
-      if (dir === "right" || dir === "down") {
+      // Ctrl+Shift+j / Ctrl+Shift+l: split the focused pane down / right. The menu lands
+      // where the new half will appear — below / to the right of the divider.
+      const splitDir = SPLIT_DIRECTION[key];
+      if (splitDir) {
         const { activePageId: pageId, activePaneId: paneId, startSplit: begin } = actions.current;
-        if (pageId && paneId) begin(pageId, paneId, dir === "right" ? "row" : "col");
+        if (pageId && paneId) handle(() => begin(pageId, paneId, splitDir));
         return;
       }
       if (key === "q") {
@@ -615,6 +616,11 @@ function App() {
     };
   });
 
+  // A page always keeps one pane: the menu only offers to close this one when another
+  // pane of the same page survives it.
+  const menuPage = menu ? pages.find(page => page.id === menu.pageId) : undefined;
+  const menuPaneClosable = menuPage?.kind === "workspace" && leafIds(menuPage.tree).length > 1;
+
   const menuItems: MenuItem[] = menu
     ? [
         {
@@ -633,6 +639,9 @@ function App() {
             { label: "日志", onSelect: () => split(menu.pageId, menu.paneId, "col", "log") },
           ],
         },
+        // A page always keeps one pane: the entry is only there when closing this one
+        // would leave the page with something in it.
+        ...(menuPaneClosable ? [{ label: "关闭面板", onSelect: () => closePane(menu.pageId, menu.paneId) }] : []),
         // The entry never changes shape: picking it again lands on the settings page instead
         // of making a second one.
         { label: "系统设置", onSelect: openSettings },

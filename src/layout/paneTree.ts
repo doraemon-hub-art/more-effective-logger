@@ -140,19 +140,29 @@ export function setSplitRatio(node: PaneNode, path: BranchPath, ratio: number): 
 type RemoveResult = { tree: PaneNode; removed: boolean };
 
 /**
- * Take the leaf with `targetId` out of the tree. Its sibling is promoted into the
- * parent's place — that is what makes a two-way split close back up instead of leaving
- * a hole. Unknown ids, and a lone root leaf, come back untouched.
+ * Take the leaf with `targetId` out of the tree. Null means "this node was the leaf":
+ * the caller's sibling takes its place, which is what makes a two-way split close back
+ * up instead of leaving a hole. A leaf removed further down only shrinks the split it
+ * belongs to — the rest of the tree is rebuilt, not dropped.
+ */
+function removeLeaf(node: PaneNode, targetId: string): PaneNode | null {
+  if (node.kind === "pane") return node.id === targetId ? null : node;
+  const first = removeLeaf(node.first, targetId);
+  if (first === null) return node.second;
+  if (first !== node.first) return { ...node, first };
+  const second = removeLeaf(node.second, targetId);
+  if (second === null) return node.first;
+  if (second !== node.second) return { ...node, second };
+  return node;
+}
+
+/**
+ * Take the leaf with `targetId` out of the tree; the sibling is promoted into the
+ * parent's place. Unknown ids, and a lone root leaf, come back untouched — a page
+ * always keeps one pane.
  */
 export function removePane(node: PaneNode, targetId: string): RemoveResult {
-  if (node.kind === "pane") return { tree: node, removed: node.id === targetId };
-  // Try the first half; if the leaf was there, the second half takes over whole.
-  const fromFirst = removePane(node.first, targetId);
-  if (fromFirst.removed) return { tree: node.second, removed: true };
-  const fromSecond = removePane(node.second, targetId);
-  if (fromSecond.removed) return { tree: node.first, removed: true };
-  // The leaf lives deeper: rebuild only the branch that changed.
-  if (fromFirst.tree !== node.first) return { tree: { ...node, first: fromFirst.tree }, removed: false };
-  if (fromSecond.tree !== node.second) return { tree: { ...node, second: fromSecond.tree }, removed: false };
-  return { tree: node, removed: false };
+  const tree = removeLeaf(node, targetId);
+  if (tree === null) return { tree: node, removed: false };
+  return { tree, removed: tree !== node };
 }
