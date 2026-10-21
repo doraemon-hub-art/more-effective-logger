@@ -10,7 +10,7 @@
  * closes it, Alt+PageUp/PageDown switch. Inactive pages stay mounted and are only
  * hidden — unmounting a page would dispose its terminals and kill the running shells,
  * which is not what switching means.
- * Alt+arrows move the focus between the panes of the current page (geometric
+ * Alt+h/j/k/l move the focus between the panes of the current page (geometric
  * neighbours, see neighborInDirection).
  * Panes report their state upwards (onStatus); the page is the only place that knows
  * about pages, focus, the top bar and the status bar.
@@ -83,12 +83,20 @@ function newPageId(): string {
   return `page-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Alt+arrows move pane focus; these are the arrow spellings in `event.key`. */
+/** Ctrl+Shift+arrows split the focused pane; these are the arrow spellings in `event.key`. */
 const ARROW_DIRECTION: Record<string, Direction | undefined> = {
   arrowleft: "left",
   arrowright: "right",
   arrowup: "up",
   arrowdown: "down",
+};
+
+/** Alt+h/j/k/l move pane focus (vim style); these are the letter spellings in `event.key`. */
+const FOCUS_DIRECTION: Record<string, Direction | undefined> = {
+  h: "left",
+  j: "down",
+  k: "up",
+  l: "right",
 };
 
 /**
@@ -542,10 +550,10 @@ function App() {
         event.stopPropagation();
         run();
       };
-      // Alt+arrows: focus moves between the panes of the current page.
+      // Alt+h/j/k/l: focus moves between the panes of the current page (vim style).
       // Alt+PageUp/PageDown: the page before / after this one.
       if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-        const dir = ARROW_DIRECTION[key];
+        const dir = FOCUS_DIRECTION[key];
         if (dir) handle(() => actions.current.movePaneFocus(dir));
         else if (key === "pageup") handle(() => actions.current.switchPage(-1));
         else if (key === "pagedown") handle(() => actions.current.switchPage(1));

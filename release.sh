@@ -201,8 +201,10 @@ if [ "$DRY_RUN" -eq 0 ]; then
         -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" "$IMAGE" bash -eu <<'SH'
 export CARGO_TARGET_DIR=/work/target/jammy PYTHONDONTWRITEBYTECODE=1
 # The build runs as root, the files it writes have to belong to the person who invoked it: the
-# target directory, and the node_modules that npm ci lays down in the mounted checkout.
-trap 'chown -R "$HOST_UID:$HOST_GID" "$CARGO_TARGET_DIR" /work/node_modules /work/dist /work/src-tauri/gen 2>/dev/null || true' EXIT
+# target directory, and the node_modules that npm ci lays down in the mounted checkout. The
+# .vite-temp leftover is dropped outright: vite leaves an empty, root-owned directory there,
+# and a root-owned directory in node_modules breaks the next local `npm run build`.
+trap 'chown -R "$HOST_UID:$HOST_GID" "$CARGO_TARGET_DIR" /work/node_modules /work/dist /work/src-tauri/gen 2>/dev/null || true; rm -rf /work/node_modules/.vite-temp' EXIT
 
 cargo test --workspace --quiet
 

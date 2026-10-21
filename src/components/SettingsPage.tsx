@@ -391,7 +391,7 @@ function SettingsPage({ settings, onChange, fonts }: SettingsPageProps) {
             </Row>
             <Row label="面板焦点">
               <Key>Alt</Key>
-              <Key>←→↑↓</Key>
+              <Key>H J K L</Key>
             </Row>
             <Row label="切换页面">
               <Key>Alt</Key>

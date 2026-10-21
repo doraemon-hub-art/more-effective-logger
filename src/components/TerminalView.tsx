@@ -169,6 +169,39 @@ function TerminalView({
     let live = false;
     let resizeTimer = 0;
 
+    // WebKitGTK IME workaround (xtermjs #6078 / #6045): xterm only clears its hidden
+    // textarea on Enter/Ctrl+C, so typed text accumulates there, and WebKitGTK's
+    // insertText (which arrives after keyup) plus the keyCode=229 textarea diff keep
+    // re-emitting the whole accumulated value — every later keystroke repeats more
+    // of what was typed before. Two halves, mirroring the mitigation the issue
+    // author runs downstream:
+    // 1. clear the textarea after every settled keystroke (not during composition,
+    //    and not under screenReaderMode — screen readers read the accumulated value);
+    // 2. swallow the insertText that merely re-delivers text already sent through the
+    //    composition path, so the committed string reaches the shell exactly once.
+    let lastCommitted = "";
+    let commitTimer = 0;
+    const onCompositionEnd = (event: CompositionEvent) => {
+      lastCommitted = event.data;
+      window.clearTimeout(commitTimer);
+      // The duplicate insertText lands after keyup; past that window the textarea
+      // is swept so nothing accumulates for the next 229-triggered re-emit.
+      commitTimer = window.setTimeout(() => {
+        lastCommitted = "";
+        const textarea = term.textarea;
+        if (textarea && !term.options.screenReaderMode) textarea.value = "";
+      }, 120);
+    };
+    const onInput = (event: Event) => {
+      const input = event as InputEvent;
+      if (input.inputType === "insertText" && lastCommitted && input.data === lastCommitted) {
+        input.stopImmediatePropagation();
+        input.preventDefault();
+      }
+    };
+    host.addEventListener("compositionend", onCompositionEnd, true);
+    host.addEventListener("input", onInput, true);
+
     // Shell output -> screen.
     void (async () => {
       listeners.push(
@@ -255,6 +288,9 @@ function TerminalView({
       disposed = true;
       window.clearInterval(cwdTimer);
       window.clearTimeout(resizeTimer);
+      window.clearTimeout(commitTimer);
+      host.removeEventListener("compositionend", onCompositionEnd, true);
+      host.removeEventListener("input", onInput, true);
       observer.disconnect();
       listeners.forEach(off => off());
       void invoke("pty_kill", { id: sessionId });

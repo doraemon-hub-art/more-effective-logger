@@ -52,6 +52,10 @@ pub const EVT_EXIT: &str = "log-exit";
 
 /// How long one connect attempt may take before it counts as failed.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long one SFTP round trip may take once the session is up. A slow embedded server
+/// answers the subsystem request and later reads in tens of seconds — well past the dial
+/// timeout, which is why this is its own, wider budget.
+const SESSION_TIMEOUT: Duration = Duration::from_secs(60);
 /// Pause between two reads once the file has been read up to its end.
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
 /// Pause after the first dropped connection, and the ceiling the pause grows to.
@@ -352,6 +356,9 @@ fn follow_once(
     if !session.authenticated() {
         return Stopped::Fatal(format!("登录被拒：{}", target.user));
     }
+    // The connect budget has done its job; from here on — opening the SFTP subsystem,
+    // stat, open, every read — a slow server gets the wider session budget.
+    session.set_timeout(SESSION_TIMEOUT.as_millis() as u32);
     let sftp = match session.sftp() {
         Ok(sftp) => sftp,
         Err(err) => return Stopped::Fatal(format!("打不开 SFTP：{err}")),
@@ -519,11 +526,11 @@ fn dial(target: &Target) -> Result<TcpStream, String> {
     let where_to = format!("{}:{}", target.host, target.port);
     let addr = (target.host.as_str(), target.port)
         .to_socket_addrs()
-        .map_err(|e| format!("连不上 {where_to}：{e}"))?
+        .map_err(|e| format!("连接失败 {where_to}：{e}"))?
         .next()
-        .ok_or_else(|| format!("连不上 {where_to}：解析不出地址"))?;
+        .ok_or_else(|| format!("连接失败 {where_to}：解析不出地址"))?;
     TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT)
-        .map_err(|e| format!("连不上 {where_to}：{e}"))
+        .map_err(|e| format!("连接失败 {where_to}：{e}"))
 }
 
 /// Size of the remote file.
