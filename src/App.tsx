@@ -674,12 +674,12 @@ function App() {
           const ids = leafIds(page.tree);
           const pageFocus = focusByPage[page.id] ?? null;
           const pageActiveId = pageFocus && ids.includes(pageFocus) ? pageFocus : (ids[0] ?? null);
+          // A hidden page keeps its own last-focused pane, but none of its panes is the
+          // focused one while the page is away: coming back re-raises the focus of the
+          // pane that had it when the page was left, and a hidden page never claims it.
+          const visible = page.id === activePage.id;
           return (
-            <div
-              key={page.id}
-              className="absolute inset-0"
-              style={{ display: page.id === activePage.id ? "block" : "none" }}
-            >
+            <div key={page.id} className="absolute inset-0" style={{ display: visible ? "block" : "none" }}>
               <Layout
                 tree={page.tree}
                 activeId={pageActiveId}
@@ -689,17 +689,18 @@ function App() {
                 }
                 onResizeSplit={(path, ratio) => resizeSplit(page.id, path, ratio)}
                 renderPane={(pane, isFocused) => {
+                  const paneFocused = isFocused && visible;
                   // A terminal reports user@host: cwd; the other kinds say what they are.
                   if (pane.type === "serial") {
-                    return <SerialPane paneId={pane.id} focused={isFocused} onLabel={reportPaneLabel} />;
+                    return <SerialPane paneId={pane.id} focused={paneFocused} onLabel={reportPaneLabel} />;
                   }
                   if (pane.type === "log") {
-                    return <LogPane paneId={pane.id} focused={isFocused} onLabel={reportPaneLabel} />;
+                    return <LogPane paneId={pane.id} focused={paneFocused} onLabel={reportPaneLabel} />;
                   }
                   return (
                     <TermPane
                       paneId={pane.id}
-                      focused={isFocused}
+                      focused={paneFocused}
                       fontSize={settings.fontSize * (zoomByPane[pane.id] ?? 1)}
                       fontFamily={settings.fontFamily}
                       theme={settings.theme}
