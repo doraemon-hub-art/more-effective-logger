@@ -22,6 +22,8 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1"
 ssh2 = "0.9"
 tauri = { version = "2", features = [] }
+# System clipboard for the terminal's copy / paste keys; the webview cannot reach it.
+tauri-plugin-clipboard-manager = "2.5.0"
 
 [features]
 default = ["custom-protocol"]

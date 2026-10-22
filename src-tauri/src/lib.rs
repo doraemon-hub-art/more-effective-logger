@@ -17,6 +17,7 @@ mod state;
 /// registers IPC commands
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(state::AppState::default())
         .setup(|app| {
             // First thing in the process: everything after this line can be logged. A log

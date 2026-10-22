@@ -19,6 +19,7 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { terminalTheme, type ThemeName } from "../theme";
@@ -222,6 +223,38 @@ function TerminalView({
     // Keystrokes -> shell.
     term.onData(data => {
       void invoke("pty_input", { id: sessionId, data });
+    });
+
+    // Copy / paste through the system clipboard. The view owns the selection and the
+    // input path, so the shortcuts are claimed here rather than in the page's key
+    // handler; Ctrl+Shift+<letter> reaches xterm and nothing else uses it, while plain
+    // Ctrl+C stays the shell's interrupt. Returning false keeps xterm from turning the
+    // combination into bytes. The webview cannot reach the clipboard on its own, so the
+    // Rust side does it (tauri-plugin-clipboard-manager).
+    term.attachCustomKeyEventHandler(event => {
+      // xterm runs this for keydown, keypress and keyup: one keystroke, one action.
+      if (event.type !== "keydown") return true;
+      if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return true;
+      const key = event.key.toLowerCase();
+      if (key === "c") {
+        // An empty selection would wipe what the clipboard already holds.
+        const selection = term.getSelection();
+        if (selection) {
+          void writeText(selection).catch(error => log.error("term", `clipboard write failed: ${String(error)}`));
+        }
+        return false;
+      }
+      if (key === "v") {
+        // term.paste, not pty_input: it normalizes line endings and brackets the text
+        // when the shell asked for it, so a multi-line paste lands in vim in one piece.
+        void readText()
+          .then(text => {
+            if (text) term.paste(text);
+          })
+          .catch(error => log.error("term", `clipboard read failed: ${String(error)}`));
+        return false;
+      }
+      return true;
     });
 
     // Pane size -> pty size (the shell gets SIGWINCH and redraws).
