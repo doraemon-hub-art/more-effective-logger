@@ -17,7 +17,7 @@
  * Splitting is mouse-driven for now (right click -> direction -> pane type).
  */
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import TermPane from "./components/TermPane";
@@ -332,6 +332,8 @@ function App() {
   // the moment a start would come back to it, so there is nothing to keep in step until then.
   // The close is held back for it — losing the write would cost the whole working layout.
   useEffect(() => {
+    // A plain browser has no window to close through; nothing here survives it anyway.
+    if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     void getCurrentWindow()
       .onCloseRequested(async event => {
