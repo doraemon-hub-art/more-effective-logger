@@ -19,6 +19,8 @@
 
 #[cfg(debug_assertions)]
 pub mod devbridge;
+
+pub mod appinfo;
 pub mod fonts;
 pub mod logfile;
 pub mod logger;

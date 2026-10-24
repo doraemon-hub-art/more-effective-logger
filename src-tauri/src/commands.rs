@@ -12,6 +12,7 @@
  * @date 2026-08-23
  * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
  */
+use crate::modules::appinfo;
 use crate::modules::fonts;
 use crate::modules::logfile;
 use crate::modules::logger;
@@ -121,6 +122,12 @@ pub async fn serial_list() -> Result<Vec<serial::PortInfo>, String> {
 #[tauri::command]
 pub async fn font_list() -> Result<Vec<String>, String> {
     Ok(fonts::list_mono())
+}
+
+/// Build facts for the settings page: version, platform, and where the app keeps its files
+#[tauri::command]
+pub async fn app_info(app: AppHandle) -> Result<appinfo::Info, String> {
+    Ok(appinfo::info(&app))
 }
 
 /// Read the settings file; null when it does not exist yet
@@ -291,6 +298,7 @@ pub async fn devbridge_call(app: AppHandle, cmd: String, args: Value) -> Result<
         "terminal_cwd" => answer(terminal_cwd(state, arg_str(&args, "id")?).await),
         "serial_list" => answer(serial_list().await),
         "font_list" => answer(font_list().await),
+        "app_info" => answer(app_info(app.clone()).await),
         "settings_load" => answer(settings_load(app.clone()).await),
         "settings_save" => answer(settings_save(app.clone(), arg_value(&args, "settings")?).await),
         "session_load" => answer(session_load(app.clone()).await),

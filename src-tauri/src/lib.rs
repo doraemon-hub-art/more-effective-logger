@@ -51,6 +51,7 @@ pub fn run() {
             commands::terminal_cwd,
             commands::serial_list,
             commands::font_list,
+            commands::app_info,
             commands::settings_load,
             commands::settings_save,
             commands::session_load,

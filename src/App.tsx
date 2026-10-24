@@ -27,7 +27,12 @@ import StatusBar, { type SysStats } from "./components/StatusBar";
 import ContextMenu, { type MenuItem } from "./components/ContextMenu";
 import PaneTypeMenu from "./components/PaneTypeMenu";
 import TopBar, { type PageCell } from "./components/TopBar";
-import SettingsPage, { BASE_FONT_SIZE, DEFAULT_SETTINGS, type AppSettings } from "./components/SettingsPage";
+import SettingsPage, {
+  BASE_FONT_SIZE,
+  DEFAULT_SETTINGS,
+  type AppInfo,
+  type AppSettings,
+} from "./components/SettingsPage";
 import { paletteOf } from "./theme";
 import Layout from "./layout/Layout";
 import {
@@ -217,6 +222,16 @@ function App() {
       })
       .catch(error => {
         log.warn("font", `font_list failed: ${String(error)}`);
+      });
+  }, []);
+
+  /** Build facts for the settings page: compiled in, so they never change during a run. */
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  useEffect(() => {
+    void invoke<AppInfo>("app_info")
+      .then(setAppInfo)
+      .catch(error => {
+        log.warn("app", `app_info failed: ${String(error)}`);
       });
   }, []);
 
@@ -668,7 +683,7 @@ function App() {
                 className="absolute inset-0 flex p-16"
                 style={{ display: page.id === activePage.id ? "block" : "none" }}
               >
-                <SettingsPage settings={settings} onChange={updateSettings} fonts={fonts} />
+                <SettingsPage settings={settings} onChange={updateSettings} fonts={fonts} info={appInfo} />
               </div>
             );
           }

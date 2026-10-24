@@ -10,7 +10,7 @@
  *
  * Presentational: the values live in the app and are handed down here, so this file only
  * knows how to draw them and what a click means. The category menu jumps within the
- * column and follows the scroll, which for four short groups is enough — no scrolling
+ * column and follows the scroll, which for five short groups is enough — no scrolling
  * indirection beyond that.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -50,6 +50,16 @@ export interface AppSettings {
 /** Font size the status bar calls 100%. */
 export const BASE_FONT_SIZE = 12.5;
 
+/** What the backend reports about this build, shown read-only in the last group. */
+export interface AppInfo {
+  /** Version from src-tauri/Cargo.toml. */
+  version: string;
+  /** os · arch · libc. */
+  platform: string;
+  /** Where settings.json, session.json and melogger.log live. */
+  config_dir: string;
+}
+
 export const DEFAULT_SETTINGS: AppSettings = {
   fontFamily: "JetBrains Mono",
   fontSize: BASE_FONT_SIZE,
@@ -86,6 +96,7 @@ const SECTIONS = [
   { id: "term", title: "终端" },
   { id: "serial", title: "串口" },
   { id: "keys", title: "快捷键" },
+  { id: "about", title: "关于" },
 ];
 
 /** How close to the top of the column a category counts as the current one, in px. */
@@ -97,6 +108,8 @@ export interface SettingsPageProps {
   onChange: (patch: Partial<AppSettings>) => void;
   /** Monospace families installed on this machine, from the backend scan. */
   fonts: string[];
+  /** Build facts the backend reports; null until the first answer arrives. */
+  info: AppInfo | null;
 }
 
 /** How long the jump highlight holds before it fades back to normal, in ms. */
@@ -242,7 +255,12 @@ function Key({ children }: { children: ReactNode }) {
   );
 }
 
-function SettingsPage({ settings, onChange, fonts }: SettingsPageProps) {
+/** A value the page only reports: text at the right end, nothing to click. */
+function Value({ children }: { children: ReactNode }) {
+  return <span className="font-mono text-[11px] text-subtext0">{children}</span>;
+}
+
+function SettingsPage({ settings, onChange, fonts, info }: SettingsPageProps) {
   const columnRef = useRef<HTMLDivElement | null>(null);
   const [current, setCurrent] = useState(SECTIONS[0].id);
   const [flash, setFlash] = useState<string | null>(null);
@@ -405,6 +423,18 @@ function SettingsPage({ settings, onChange, fonts }: SettingsPageProps) {
             </Row>
             <Row label="打开设置">
               <Key>面板右键</Key>
+            </Row>
+          </Group>
+
+          <Group id="about" title="关于" flash={flash === "about"}>
+            <Row label="版本">
+              <Value>{info?.version ?? "—"}</Value>
+            </Row>
+            <Row label="平台">
+              <Value>{info?.platform ?? "—"}</Value>
+            </Row>
+            <Row label="配置与日志">
+              <Value>{info?.config_dir ?? "—"}</Value>
             </Row>
           </Group>
         </div>
