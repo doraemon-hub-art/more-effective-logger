@@ -10,7 +10,7 @@
  * one piece: an IPC call per console line would cost more than the line is worth. Importing
  * this module is what turns the hook on.
  */
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./ipc";
 
 type Level = "debug" | "info" | "warn" | "error";
 

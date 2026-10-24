@@ -37,6 +37,7 @@ pub fn run() {
             // Pushes one sys-stats event per second for the status bar.
             modules::logfile::info("app", "status-bar sampler started");
             modules::sysstat::start_loop(app.handle().clone());
+            start_dev_bridge(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -65,3 +66,50 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+/// Events a browser client has to receive; the window client gets them from Tauri itself.
+#[cfg(debug_assertions)]
+const BRIDGED_EVENTS: [&str; 8] = [
+    modules::pty::EVT_OUTPUT,
+    modules::pty::EVT_EXIT,
+    modules::serial::EVT_DATA,
+    modules::serial::EVT_EXIT,
+    modules::logger::EVT_DATA,
+    modules::logger::EVT_STATE,
+    modules::logger::EVT_EXIT,
+    modules::sysstat::EVT_STATS,
+];
+
+/// Serve commands and events to a browser on loopback, so a page loaded from the dev server
+/// can reach the same backend the window does. Development only: a release build has no
+/// business answering commands over a socket.
+#[cfg(debug_assertions)]
+fn start_dev_bridge(app: &tauri::AppHandle) {
+    use tauri::Listener;
+
+    let handle = app.clone();
+    let dispatch: modules::devbridge::Dispatch = std::sync::Arc::new(move |cmd, args| {
+        tauri::async_runtime::block_on(commands::devbridge_call(handle.clone(), cmd, args))
+    });
+    let hub = match modules::devbridge::start(modules::devbridge::ADDR, dispatch) {
+        Ok(hub) => hub,
+        Err(error) => {
+            modules::logfile::error("app", format!("dev bridge not started: {error}"));
+            return;
+        }
+    };
+    for name in BRIDGED_EVENTS {
+        let hub = hub.clone();
+        let _ = app.listen_any(name, move |event| {
+            hub.publish(modules::devbridge::Event {
+                name,
+                payload: event.payload().to_string(),
+            });
+        });
+    }
+    modules::logfile::info("app", format!("dev bridge on {}", modules::devbridge::ADDR));
+}
+
+/// Release builds ship without the browser bridge.
+#[cfg(not(debug_assertions))]
+fn start_dev_bridge(_app: &tauri::AppHandle) {}

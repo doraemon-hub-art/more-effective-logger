@@ -17,8 +17,7 @@
  * Splitting is mouse-driven for now (right click -> direction -> pane type).
  */
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { invoke, isTauri, listen } from "./ipc";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import TermPane from "./components/TermPane";
 import SerialPane from "./components/SerialPane";

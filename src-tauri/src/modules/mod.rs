@@ -7,6 +7,7 @@
 //! - logfile.rs: the app's own runtime log (the file this run is written to)
 //! - ssh.rs: remote SSH connections (ssh2)
 //! - logger.rs: log sources (local file snapshot, remote file followed over SSH)
+//! - devbridge.rs: loopback HTTP bridge for a browser client (development only)
 
 /*
  * @file mod.rs
@@ -16,6 +17,8 @@
  * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
  */
 
+#[cfg(debug_assertions)]
+pub mod devbridge;
 pub mod fonts;
 pub mod logfile;
 pub mod logger;

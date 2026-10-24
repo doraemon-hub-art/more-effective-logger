@@ -206,3 +206,123 @@ pub async fn log_connect(
 pub async fn log_close(state: State<'_, AppState>, id: String) -> Result<(), String> {
     logger::close(&state, &id)
 }
+
+/// One argument of a bridged call, under the name the frontend sent.
+fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a Value, String> {
+    args.get(key)
+        .ok_or_else(|| format!("missing argument: {key}"))
+}
+
+fn arg_str(args: &Value, key: &str) -> Result<String, String> {
+    arg(args, key)?
+        .as_str()
+        .map(str::to_string)
+        .ok_or_else(|| format!("argument {key} is not a string"))
+}
+
+fn arg_optional_str(args: &Value, key: &str) -> Result<Option<String>, String> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value
+            .as_str()
+            .map(|text| Some(text.to_string()))
+            .ok_or_else(|| format!("argument {key} is not a string")),
+    }
+}
+
+fn arg_number<T: TryFrom<u64>>(args: &Value, key: &str) -> Result<T, String> {
+    arg(args, key)?
+        .as_u64()
+        .and_then(|number| T::try_from(number).ok())
+        .ok_or_else(|| format!("argument {key} is not a valid number"))
+}
+
+fn arg_scale(args: &Value, key: &str) -> Result<f64, String> {
+    arg(args, key)?
+        .as_f64()
+        .ok_or_else(|| format!("argument {key} is not a number"))
+}
+
+fn arg_value<T: serde::de::DeserializeOwned>(args: &Value, key: &str) -> Result<T, String> {
+    serde_json::from_value(arg(args, key)?.clone())
+        .map_err(|error| format!("argument {key}: {error}"))
+}
+
+/// A command's result in the shape the bridge returns; `()` becomes null.
+fn answer<T: serde::Serialize>(result: Result<T, String>) -> Result<Value, String> {
+    result.and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string()))
+}
+
+/// Run one command by name for a browser client. This mirrors the `generate_handler!` list
+/// in lib.rs: every command registered there has an arm here.
+#[cfg(debug_assertions)]
+pub async fn devbridge_call(app: AppHandle, cmd: String, args: Value) -> Result<Value, String> {
+    let state = app.state::<AppState>();
+    match cmd.as_str() {
+        "app_ping" => answer(app_ping(state).await),
+        "log_write" => {
+            log_write(arg_value(&args, "lines")?).await;
+            Ok(Value::Null)
+        }
+        "set_zoom" => answer(set_zoom(app.clone(), arg_scale(&args, "scale")?).await),
+        "spawn_terminal" => answer(
+            spawn_terminal(
+                app.clone(),
+                arg_str(&args, "id")?,
+                arg_number(&args, "cols")?,
+                arg_number(&args, "rows")?,
+                arg_optional_str(&args, "cwd")?,
+            )
+            .await,
+        ),
+        "pty_input" => {
+            answer(pty_input(state, arg_str(&args, "id")?, arg_str(&args, "data")?).await)
+        }
+        "pty_resize" => answer(
+            pty_resize(
+                state,
+                arg_str(&args, "id")?,
+                arg_number(&args, "cols")?,
+                arg_number(&args, "rows")?,
+            )
+            .await,
+        ),
+        "pty_kill" => answer(pty_kill(state, arg_str(&args, "id")?).await),
+        "terminal_cwd" => answer(terminal_cwd(state, arg_str(&args, "id")?).await),
+        "serial_list" => answer(serial_list().await),
+        "font_list" => answer(font_list().await),
+        "settings_load" => answer(settings_load(app.clone()).await),
+        "settings_save" => answer(settings_save(app.clone(), arg_value(&args, "settings")?).await),
+        "session_load" => answer(session_load(app.clone()).await),
+        "session_save" => answer(session_save(app.clone(), arg_value(&args, "session")?).await),
+        "serial_open" => answer(
+            serial_open(
+                app.clone(),
+                arg_str(&args, "id")?,
+                arg_str(&args, "device")?,
+                arg_number(&args, "baud")?,
+            )
+            .await,
+        ),
+        "serial_write" => {
+            answer(serial_write(state, arg_str(&args, "id")?, arg_value(&args, "data")?).await)
+        }
+        "serial_close" => answer(serial_close(state, arg_str(&args, "id")?).await),
+        "log_open_file" => answer(log_open_file(arg_str(&args, "path")?).await),
+        "log_complete" => answer(log_complete(arg_str(&args, "prefix")?).await),
+        "log_connect" => answer(
+            log_connect(
+                app.clone(),
+                arg_str(&args, "id")?,
+                arg_str(&args, "host")?,
+                arg_str(&args, "user")?,
+                arg_str(&args, "password")?,
+                arg_number(&args, "port")?,
+                arg_str(&args, "path")?,
+            )
+            .await,
+        ),
+        "log_close" => answer(log_close(state, arg_str(&args, "id")?).await),
+        other => Err(format!("unknown command: {other}")),
+    }
+}

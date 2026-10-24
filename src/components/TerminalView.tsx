@@ -17,9 +17,7 @@
  * file. The id is a prop so several terminals can live side by side.
  */
 import { useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { invoke, listen, readText, writeText } from "../ipc";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { terminalTheme, type ThemeName } from "../theme";

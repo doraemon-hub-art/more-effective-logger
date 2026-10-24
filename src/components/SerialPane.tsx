@@ -12,8 +12,7 @@
  * bytes mean.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { invoke, listen } from "../ipc";
 import { log } from "../log";
 
 /** One scanned port, mirroring modules/serial.rs. */
