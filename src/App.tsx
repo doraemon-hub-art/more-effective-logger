@@ -22,6 +22,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import TermPane from "./components/TermPane";
 import SerialPane from "./components/SerialPane";
 import LogPane from "./components/LogPane";
+import EditPane from "./components/EditPane";
 import { fontStack, type TerminalStatus } from "./components/TerminalView";
 import StatusBar, { type SysStats } from "./components/StatusBar";
 import ContextMenu, { type MenuItem } from "./components/ContextMenu";
@@ -138,7 +139,7 @@ function restoreTree(node: unknown): PaneNode | null {
   }
   const leaf = node as PaneLeaf;
   if (leaf.kind !== "pane" || typeof leaf.id !== "string") return null;
-  if (leaf.type !== "term" && leaf.type !== "serial" && leaf.type !== "log") return null;
+  if (leaf.type !== "term" && leaf.type !== "serial" && leaf.type !== "log" && leaf.type !== "edit") return null;
   return { kind: "pane", id: leaf.id, type: leaf.type };
 }
 
@@ -645,6 +646,7 @@ function App() {
             { label: "终端", onSelect: () => split(menu.pageId, menu.paneId, "row", "term") },
             { label: "串口", onSelect: () => split(menu.pageId, menu.paneId, "row", "serial") },
             { label: "日志", onSelect: () => split(menu.pageId, menu.paneId, "row", "log") },
+            { label: "编辑", onSelect: () => split(menu.pageId, menu.paneId, "row", "edit") },
           ],
         },
         {
@@ -653,6 +655,7 @@ function App() {
             { label: "终端", onSelect: () => split(menu.pageId, menu.paneId, "col", "term") },
             { label: "串口", onSelect: () => split(menu.pageId, menu.paneId, "col", "serial") },
             { label: "日志", onSelect: () => split(menu.pageId, menu.paneId, "col", "log") },
+            { label: "编辑", onSelect: () => split(menu.pageId, menu.paneId, "col", "edit") },
           ],
         },
         // A page always keeps one pane: the entry is only there when closing this one
@@ -712,6 +715,18 @@ function App() {
                   }
                   if (pane.type === "log") {
                     return <LogPane paneId={pane.id} focused={paneFocused} onLabel={reportPaneLabel} />;
+                  }
+                  if (pane.type === "edit") {
+                    return (
+                      <EditPane
+                        paneId={pane.id}
+                        focused={paneFocused}
+                        onLabel={reportPaneLabel}
+                        fontSize={settings.fontSize * (zoomByPane[pane.id] ?? 1)}
+                        fontFamily={settings.fontFamily}
+                        theme={settings.theme}
+                      />
+                    );
                   }
                   return (
                     <TermPane

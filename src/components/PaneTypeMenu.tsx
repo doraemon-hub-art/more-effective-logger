@@ -18,6 +18,7 @@ const CHOICES: Array<{ id: PaneType; label: string }> = [
   { id: "term", label: "终端" },
   { id: "serial", label: "串口" },
   { id: "log", label: "日志" },
+  { id: "edit", label: "编辑" },
 ];
 
 export interface PaneTypeMenuProps {

@@ -10,8 +10,8 @@
  * parent box, so the layout survives window resizing without any JS.
  */
 
-/** Pane kinds: terminals, serial ports and logs. */
-export type PaneType = "term" | "serial" | "log";
+/** Pane kinds: terminals, serial ports, logs and file editing. */
+export type PaneType = "term" | "serial" | "log" | "edit";
 
 /** "row" splits left|right, "col" splits top/bottom. */
 export type SplitDir = "row" | "col";
@@ -67,10 +67,16 @@ export function createLogPane(): PaneLeaf {
   return { kind: "pane", id: newPaneId(), type: "log" };
 }
 
+/** A fresh edit pane. */
+export function createEditPane(): PaneLeaf {
+  return { kind: "pane", id: newPaneId(), type: "edit" };
+}
+
 /** A fresh pane of the given kind. */
 export function createPane(type: PaneType): PaneLeaf {
   if (type === "serial") return createSerialPane();
   if (type === "log") return createLogPane();
+  if (type === "edit") return createEditPane();
   return createTermPane();
 }
 

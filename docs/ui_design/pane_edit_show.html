@@ -1,0 +1,482 @@
+<!--
+ * @file pane_edit_show.html
+ * @brief Concept mock: edit pane, connected — files on the left, one editor on the right, the
+ *        open files as tabs above it, a path/position/lang strip below.
+ * @author doraemon-hub-art <1660219734@qq.com>
+ * @date 2026-10-24
+ * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>melogger — 编辑面板（已连接）</title>
+<style>
+  :root {
+    /* Catppuccin Mocha */
+    --crust:   #11111b;
+    --mantle:  #181825;
+    --base:    #1e1e2e;
+    --surface0:#313244;
+    --overlay0:#6c7086;
+    --subtext0:#a6adc8;
+    --subtext1:#bac2de;
+    --text:    #cdd6f4;
+    --blue:    #89b4fa;
+    --sky:     #89dceb;
+    --teal:    #94e2d5;
+    --green:   #a6e3a1;
+    --peach:   #fab387;
+    --mauve:   #cba6f7;
+    --red:     #f38ba8;
+
+    --ui: "Noto Sans CJK SC", "Source Han Sans SC", "Ubuntu", sans-serif;
+    --mono: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Noto Sans Mono CJK SC", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--crust);
+    font-family: var(--ui);
+    color: var(--text);
+    padding: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .pane {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    background: var(--base);
+    border: 1px solid var(--blue);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(137,180,250,.35);
+  }
+
+  /* 标题栏：类型标记 + 来源 + 目标 …… 右端动作 */
+  .pane-head {
+    flex: 0 0 26px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 8px;
+    background: #1b2133;
+    border-bottom: 1px solid var(--surface0);
+    font-size: 11.5px;
+  }
+  .tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .5px;
+    padding: 1px 5px; border-radius: 3px;
+    background: rgba(148,226,213,.16); color: var(--teal);
+  }
+  .tag.mode { background: rgba(137,220,235,.14); color: var(--sky); }
+  .who { font-family: var(--mono); font-size: 11px; color: var(--text); }
+
+  .body { flex: 1; min-height: 0; display: flex; }
+
+  .tree {
+    flex: 0 0 196px;
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--surface0);
+    background: var(--mantle);
+    min-width: 0;
+  }
+  .tree-head {
+    flex: 0 0 22px;
+    display: flex; align-items: center;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--surface0);
+    font-family: var(--mono); font-size: 10.5px; color: var(--overlay0);
+  }
+  .tree-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; }
+
+  .node {
+    display: flex; align-items: center; gap: 6px;
+    height: 21px; padding: 0 10px;
+    font-family: var(--mono); font-size: 11.5px; color: var(--subtext1);
+    white-space: nowrap; cursor: pointer;
+  }
+  .node .caret { width: 8px; color: var(--overlay0); font-size: 9px; }
+  .node .caret.blank { visibility: hidden; }
+  .node.dir { color: var(--subtext0); cursor: default; }
+  .node.file:hover { background: #23233a; }
+  .node.file.active { background: rgba(137,180,250,.14); color: var(--text); }
+  .node .dirty { margin-left: auto; color: var(--text); font-size: 9px; }
+
+  .main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+  /* 左列可以收起，编辑区吃掉整行 */
+  .pane.no-tree .tree { display: none; }
+
+  /* Ctrl+P：在当前目录里挑一个文件 */
+  .picker {
+    position: absolute; left: 8px; top: 30px; z-index: 10;
+    width: 360px;
+    background: var(--mantle);
+    border: 1px solid var(--surface0); border-radius: 5px;
+    box-shadow: 0 12px 30px rgba(0,0,0,.5);
+    overflow: hidden;
+  }
+  .picker[hidden] { display: none; }
+  .picker-in {
+    width: 100%; padding: 4px 8px;
+    border: 0; border-bottom: 1px solid var(--surface0);
+    background: var(--base); outline: none;
+    font-family: var(--mono); font-size: 11.5px; color: var(--text);
+  }
+  .picker-list { max-height: 168px; overflow-y: auto; padding: 3px 0; }
+  .pick-row {
+    display: flex; align-items: center; gap: 8px;
+    height: 21px; padding: 0 8px;
+    font-family: var(--mono); font-size: 11.5px; color: var(--subtext1);
+    cursor: pointer;
+  }
+  .pick-row .where { margin-left: auto; color: var(--overlay0); font-size: 10.5px; }
+  .pick-row.on { background: rgba(137,180,250,.14); color: var(--text); }
+  .pick-row.on .where { color: var(--subtext0); }
+  .pick-empty { padding: 6px 8px; font-family: var(--mono); font-size: 10.5px; color: var(--overlay0); }
+
+  /* 打开的文件 */
+  .tabs {
+    flex: 0 0 26px;
+    display: flex; align-items: stretch;
+    background: var(--mantle);
+    border-bottom: 1px solid var(--surface0);
+    overflow-x: auto;
+  }
+  .tab {
+    display: flex; align-items: center; gap: 6px;
+    padding: 0 8px 0 10px;
+    border-right: 1px solid var(--surface0);
+    font-family: var(--mono); font-size: 11px; color: var(--overlay0);
+    cursor: pointer;
+  }
+  .tab:hover { color: var(--subtext1); }
+  .tab.active { background: var(--base); color: var(--text); box-shadow: inset 0 2px 0 var(--blue); }
+  .tab .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text); display: none; }
+  .tab.dirty .dot { display: block; }
+  .tab .x { color: var(--overlay0); font-size: 11px; }
+  .tab .x:hover { color: var(--red); }
+
+  /* 代码：行号 + 整行，当前行带一条浅底 */
+  .code {
+    flex: 1; min-height: 0; overflow: auto;
+    font-family: var(--mono); font-size: 11.5px; line-height: 19px;
+    color: var(--text);
+    padding: 6px 0 10px;
+  }
+  .line { display: flex; white-space: pre; }
+  .line.on { background: rgba(137,180,250,.08); }
+  .ln { flex: 0 0 46px; padding-right: 12px; text-align: right; color: var(--overlay0); user-select: none; }
+  .src-text { padding-right: 16px; }
+  .c { color: var(--overlay0); font-style: italic; }
+  .kw { color: var(--mauve); }
+  .s { color: var(--green); }
+  .n { color: var(--peach); }
+  .v { color: var(--sky); }
+  .p { color: var(--subtext0); }
+
+  /* 底条：路径 · 行列 · 语言 · 编码 · 换行 */
+  .status {
+    flex: 0 0 22px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 10px;
+    border-top: 1px solid var(--surface0);
+    background: var(--mantle);
+    font-family: var(--mono); font-size: 10.5px; color: var(--overlay0);
+    white-space: nowrap; overflow: hidden;
+  }
+  .status .path { color: var(--subtext0); }
+  .status .spacer { flex: 1; }
+</style>
+</head>
+<body>
+
+  <!--
+    连上之后：左列是这个目标的文件，右列是编辑区。
+    点左列的文件 = 打开它（已经有页签就切过去）；点页签 = 在打开的文件之间切。
+    页签上的 ● 是改过没保存，左列里那个文件也跟着带点。
+    Ctrl+` 收起/展开左列；Ctrl+P 在当前目录里挑文件 —— 输入不区分大小写，候选在输入框
+    下面，Tab 在候选里走，回车打开。
+    底条一行：路径 · 行列 · 语言 · 编码 · 换行。
+    怎么连上来的那一屏在 pane_edit_start.html。
+  -->
+
+  <div class="pane">
+    <div class="pane-head">
+      <span class="tag">EDIT</span>
+      <span class="tag mode">远程</span>
+      <span class="who">dev@dev-box:/srv/app</span>
+    </div>
+
+    <div class="body">
+      <div class="tree">
+        <div class="tree-head">/srv/app</div>
+        <div class="tree-body">
+          <div class="node dir"><span class="caret">▾</span>conf</div>
+          <div class="node file" data-file="app.conf" style="padding-left: 27px"><span class="caret blank">·</span>app.conf</div>
+          <div class="node file" data-file="log.conf" style="padding-left: 27px"><span class="caret blank">·</span>log.conf</div>
+          <div class="node dir"><span class="caret">▾</span>scripts</div>
+          <div class="node file" data-file="rotate.sh" style="padding-left: 27px"><span class="caret blank">·</span>rotate.sh</div>
+          <div class="node file" data-file="README.md"><span class="caret blank">·</span>README.md</div>
+        </div>
+      </div>
+
+      <div class="main">
+        <div class="tabs" id="tabs"></div>
+
+        <div class="picker" id="picker" hidden>
+          <input class="picker-in" id="picker-in" spellcheck="false" />
+          <div class="picker-list" id="picker-list"></div>
+        </div>
+        <div class="code" id="code"></div>
+        <div class="status">
+          <span class="path" id="status-path">/srv/app/conf/app.conf</span>
+          <span id="status-pos">7:13</span>
+          <span class="spacer"></span>
+          <span id="status-lang">conf</span>
+          <span>UTF-8</span>
+          <span>LF</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  /* 演示用：四份文件的内容与页签，点左列或点页签都会切过去。 */
+  const FILES = {
+    "app.conf": {
+      path: "/srv/app/conf/app.conf",
+      lang: "conf",
+      dirty: true,
+      line: 6,
+      lines: [
+        '<span class="c"># listener</span>',
+        'listen      <span class="v">0.0.0.0</span>:<span class="n">8080</span><span class="p">;</span>',
+        'workers     <span class="n">4</span><span class="p">;</span>',
+        '',
+        '<span class="c"># where the run writes its own lines</span>',
+        'log_file    <span class="s">/var/log/app/app.log</span><span class="p">;</span>',
+        'log_level   <span class="kw">info</span><span class="p">;</span>',
+        '',
+        '<span class="c"># rotation</span>',
+        'rotate_size <span class="n">64m</span><span class="p">;</span>',
+        'rotate_keep <span class="n">7</span><span class="p">;</span>'
+      ]
+    },
+    "log.conf": {
+      path: "/srv/app/conf/log.conf",
+      lang: "conf",
+      dirty: false,
+      line: 1,
+      lines: [
+        '<span class="c"># line format</span>',
+        'time_format <span class="s">"%Y-%m-%d %H:%M:%S.%3N"</span><span class="p">;</span>',
+        'level_width <span class="n">5</span><span class="p">;</span>',
+        'target_width <span class="n">8</span><span class="p">;</span>'
+      ]
+    },
+    "rotate.sh": {
+      path: "/srv/app/scripts/rotate.sh",
+      lang: "bash",
+      dirty: false,
+      line: 4,
+      lines: [
+        '<span class="p">#!/bin/bash</span>',
+        '<span class="c"># move the current log aside and start a fresh one</span>',
+        '<span class="kw">set</span> -e',
+        'src=<span class="s">/var/log/app/app.log</span>',
+        'dst=<span class="s">"$src.$(date +%Y%m%d-%H%M%S)"</span>',
+        '<span class="kw">mv</span> <span class="s">"$src"</span> <span class="s">"$dst"</span>',
+        '<span class="p">:</span> &gt; <span class="s">"$src"</span>',
+        '<span class="kw">gzip</span> -f <span class="s">"$dst"</span>'
+      ]
+    },
+    "README.md": {
+      path: "/srv/app/README.md",
+      lang: "markdown",
+      dirty: false,
+      line: 0,
+      lines: [
+        '<span class="kw"># app</span>',
+        '',
+        'Logs land in <span class="s">/var/log/app/app.log</span>.',
+        'Config lives in <span class="s">conf/</span>.'
+      ]
+    }
+  };
+
+  const open = ["app.conf", "rotate.sh"];
+  let active = "app.conf";
+
+  const tabsEl = document.getElementById("tabs");
+  const codeEl = document.getElementById("code");
+  const pathEl = document.getElementById("status-path");
+  const posEl = document.getElementById("status-pos");
+  const langEl = document.getElementById("status-lang");
+
+  function drawTabs() {
+    tabsEl.innerHTML = "";
+    for (const name of open) {
+      const file = FILES[name];
+      const tab = document.createElement("div");
+      tab.className = "tab" + (name === active ? " active" : "") + (file.dirty ? " dirty" : "");
+      tab.dataset.file = name;
+      tab.innerHTML =
+        '<span class="dot"></span><span class="name">' + name + '</span><span class="x">✕</span>';
+      tab.addEventListener("click", event => {
+        if (event.target.classList.contains("x")) {
+          closeFile(name);
+          return;
+        }
+        showFile(name);
+      });
+      tabsEl.appendChild(tab);
+    }
+    document.querySelectorAll(".node.file").forEach(node => {
+      node.classList.toggle("active", node.dataset.file === active);
+      const file = FILES[node.dataset.file];
+      let mark = node.querySelector(".dirty");
+      if (file && file.dirty) {
+        if (!mark) {
+          mark = document.createElement("span");
+          mark.className = "dirty";
+          mark.textContent = "●";
+          node.appendChild(mark);
+        }
+      } else if (mark) {
+        mark.remove();
+      }
+    });
+  }
+
+  function drawCode(name) {
+    const file = FILES[name];
+    codeEl.innerHTML = "";
+    file.lines.forEach((text, index) => {
+      const line = document.createElement("div");
+      line.className = "line" + (index === file.line ? " on" : "");
+      line.innerHTML =
+        '<span class="ln">' + (index + 1) + '</span><span class="src-text">' + (text || " ") + '</span>';
+      codeEl.appendChild(line);
+    });
+    pathEl.textContent = file.path;
+    posEl.textContent = (file.line + 1) + ":13";
+    langEl.textContent = file.lang;
+  }
+
+  function showFile(name) {
+    if (!open.includes(name)) open.push(name);
+    active = name;
+    drawTabs();
+    drawCode(name);
+  }
+
+  function closeFile(name) {
+    const at = open.indexOf(name);
+    if (at >= 0) open.splice(at, 1);
+    if (active === name) {
+      const next = open[Math.max(0, at - 1)];
+      if (next) {
+        showFile(next);
+        return;
+      }
+      active = "";
+      drawTabs();
+      codeEl.innerHTML = "";
+      return;
+    }
+    drawTabs();
+  }
+
+  document.querySelectorAll(".node.file").forEach(node => {
+    node.addEventListener("click", () => showFile(node.dataset.file));
+  });
+
+  /* Ctrl+` 收起/展开左列；Ctrl+P 在当前目录里挑文件：不区分大小写，Tab 在候选里走，回车打开。 */
+  const pickerEl = document.getElementById("picker");
+  const pickerIn = document.getElementById("picker-in");
+  const pickerList = document.getElementById("picker-list");
+  let picked = 0;
+  let matches = [];
+
+  function closePicker() {
+    pickerEl.hidden = true;
+    pickerIn.value = "";
+  }
+
+  function drawPicker() {
+    const query = pickerIn.value.trim().toLowerCase();
+    matches = Object.keys(FILES).filter(name => {
+      const file = FILES[name];
+      return !query || name.toLowerCase().includes(query) || file.path.toLowerCase().includes(query);
+    });
+    if (picked >= matches.length) picked = 0;
+    pickerList.innerHTML = "";
+    if (!matches.length) {
+      pickerList.innerHTML = '<div class="pick-empty">无匹配</div>';
+      return;
+    }
+    matches.forEach((name, index) => {
+      const row = document.createElement("div");
+      row.className = "pick-row" + (index === picked ? " on" : "");
+      row.innerHTML =
+        "<span>" + name + '</span><span class="where">' + FILES[name].path.replace(/\/[^/]*$/, "") + "</span>";
+      row.addEventListener("mousedown", event => {
+        event.preventDefault();
+        showFile(name);
+        closePicker();
+      });
+      pickerList.appendChild(row);
+    });
+  }
+
+  function openPicker() {
+    pickerEl.hidden = false;
+    picked = 0;
+    pickerIn.value = "";
+    drawPicker();
+    pickerIn.focus();
+  }
+
+  pickerIn.addEventListener("input", () => {
+    picked = 0;
+    drawPicker();
+  });
+
+  pickerIn.addEventListener("keydown", event => {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      if (matches.length) picked = (picked + (event.shiftKey ? -1 : 1) + matches.length) % matches.length;
+      drawPicker();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (matches.length) {
+        showFile(matches[picked]);
+        closePicker();
+      }
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePicker();
+    }
+  });
+
+  window.addEventListener("keydown", event => {
+    if (!event.ctrlKey || event.altKey || event.metaKey) return;
+    if (event.key === "`" || event.key === "~") {
+      event.preventDefault();
+      document.querySelector(".pane").classList.toggle("no-tree");
+      return;
+    }
+    if (event.key.toLowerCase() === "p") {
+      event.preventDefault();
+      openPicker();
+    }
+  });
+
+  showFile(active);
+</script>
+</body>
+</html>

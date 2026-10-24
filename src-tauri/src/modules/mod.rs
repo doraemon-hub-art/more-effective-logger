@@ -21,10 +21,13 @@
 pub mod devbridge;
 
 pub mod appinfo;
+pub mod edit;
 pub mod fonts;
 pub mod logfile;
 pub mod logger;
+pub mod paths;
 pub mod pty;
 pub mod serial;
+pub mod ssh;
 pub mod store;
 pub mod sysstat;

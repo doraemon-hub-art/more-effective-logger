@@ -13,6 +13,7 @@
  * @copyright Copyright (c) 2026 doraemon-hub-art. All rights reserved.
  */
 use crate::modules::appinfo;
+use crate::modules::edit;
 use crate::modules::fonts;
 use crate::modules::logfile;
 use crate::modules::logger;
@@ -214,6 +215,86 @@ pub async fn log_close(state: State<'_, AppState>, id: String) -> Result<(), Str
     logger::close(&state, &id)
 }
 
+/// Take a local directory into an edit pane and hand back what it holds
+#[tauri::command]
+pub async fn edit_open_local(
+    state: State<'_, AppState>,
+    id: String,
+    dir: String,
+) -> Result<edit::Listing, String> {
+    edit::open_local(&state.edits, &id, &dir)
+}
+
+/// Log in for an edit pane and list the directory it lands in (`dir` empty = the login one)
+#[tauri::command]
+pub async fn edit_open_remote(
+    state: State<'_, AppState>,
+    id: String,
+    host: String,
+    user: String,
+    password: String,
+    port: u16,
+    dir: Option<String>,
+) -> Result<edit::Listing, String> {
+    edit::open_remote(
+        &state.edits,
+        &id,
+        &host,
+        port,
+        &user,
+        &password,
+        dir.as_deref().unwrap_or(""),
+    )
+}
+
+/// List one directory of the pane's link
+#[tauri::command]
+pub async fn edit_list(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+) -> Result<edit::Listing, String> {
+    edit::list(&state.edits, &id, &path)
+}
+
+/// Read a whole file into the editor
+#[tauri::command]
+pub async fn edit_read(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+) -> Result<String, String> {
+    edit::read(&state.edits, &id, &path)
+}
+
+/// Replace a file with what the editor holds
+#[tauri::command]
+pub async fn edit_save(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+    text: String,
+) -> Result<(), String> {
+    edit::save(&state.edits, &id, &path, &text)
+}
+
+/// Drop the link behind a pane
+#[tauri::command]
+pub async fn edit_close(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    edit::close(&state.edits, &id);
+    Ok(())
+}
+
+/// Completion candidates for a path typed into the pane (local, or over the open link)
+#[tauri::command]
+pub async fn edit_complete(
+    state: State<'_, AppState>,
+    id: String,
+    prefix: String,
+) -> Result<Vec<edit::Candidate>, String> {
+    edit::complete(&state.edits, &id, &prefix)
+}
+
 /// One argument of a bridged call, under the name the frontend sent.
 fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a Value, String> {
     args.get(key)
@@ -331,6 +412,40 @@ pub async fn devbridge_call(app: AppHandle, cmd: String, args: Value) -> Result<
             .await,
         ),
         "log_close" => answer(log_close(state, arg_str(&args, "id")?).await),
+        "edit_open_local" => {
+            answer(edit_open_local(state, arg_str(&args, "id")?, arg_str(&args, "dir")?).await)
+        }
+        "edit_open_remote" => answer(
+            edit_open_remote(
+                state,
+                arg_str(&args, "id")?,
+                arg_str(&args, "host")?,
+                arg_str(&args, "user")?,
+                arg_str(&args, "password")?,
+                arg_number(&args, "port")?,
+                arg_optional_str(&args, "dir")?,
+            )
+            .await,
+        ),
+        "edit_list" => {
+            answer(edit_list(state, arg_str(&args, "id")?, arg_str(&args, "path")?).await)
+        }
+        "edit_read" => {
+            answer(edit_read(state, arg_str(&args, "id")?, arg_str(&args, "path")?).await)
+        }
+        "edit_save" => answer(
+            edit_save(
+                state,
+                arg_str(&args, "id")?,
+                arg_str(&args, "path")?,
+                arg_str(&args, "text")?,
+            )
+            .await,
+        ),
+        "edit_close" => answer(edit_close(state, arg_str(&args, "id")?).await),
+        "edit_complete" => {
+            answer(edit_complete(state, arg_str(&args, "id")?, arg_str(&args, "prefix")?).await)
+        }
         other => Err(format!("unknown command: {other}")),
     }
 }

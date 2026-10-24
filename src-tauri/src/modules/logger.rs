@@ -29,7 +29,6 @@
 
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
-use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -37,10 +36,12 @@ use std::thread;
 use std::time::Duration;
 
 use serde::Serialize;
-use ssh2::{Session, Sftp};
+use ssh2::Sftp;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::modules::logfile;
+use crate::modules::paths::expand_home;
+use crate::modules::ssh;
 use crate::state::AppState;
 
 /// Lines of one pane, already split.
@@ -50,11 +51,9 @@ pub const EVT_STATE: &str = "log-state";
 /// The source is gone for good: closed on purpose, or failed in a way retrying cannot fix.
 pub const EVT_EXIT: &str = "log-exit";
 
-/// How long one connect attempt may take before it counts as failed.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long one SFTP round trip may take once the session is up. A slow embedded server
-/// answers the subsystem request and later reads in tens of seconds — well past the dial
-/// timeout, which is why this is its own, wider budget.
+/// answers the subsystem request and later reads in tens of seconds — well past the connect
+/// budget in `ssh.rs`, which is why this is its own, wider one.
 const SESSION_TIMEOUT: Duration = Duration::from_secs(60);
 /// Pause between two reads once the file has been read up to its end.
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
@@ -148,23 +147,12 @@ fn take_lines(pending: &mut Vec<u8>) -> Vec<String> {
     lines
 }
 
-/// A typed path with a leading `~` resolved: only a shell expands a tilde, and this side
-/// has no shell.
-fn expand(path: &str) -> String {
-    let home = std::env::var("HOME").ok().filter(|home| !home.is_empty());
-    match (home, path) {
-        (Some(home), "~") => home,
-        (Some(home), rest) if rest.starts_with("~/") => format!("{home}/{}", &rest[2..]),
-        _ => path.to_string(),
-    }
-}
-
 /// Read a local file once and split it into lines.
 ///
 /// The whole file is read in one go: what is in a log at this moment is the point, and
 /// there is nothing to follow afterwards.
 pub fn read_snapshot(path: &str) -> Result<Snapshot, String> {
-    let path = expand(path);
+    let path = expand_home(path);
     let bytes = fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
     let size = bytes.len() as u64;
     let mut pending = bytes;
@@ -180,7 +168,7 @@ pub fn read_snapshot(path: &str) -> Result<Snapshot, String> {
 /// entries starting with the name part come back, directories with a trailing slash so
 /// picking one keeps the typing inside it.
 pub fn complete(prefix: &str) -> Vec<Candidate> {
-    let typed = expand(prefix);
+    let typed = expand_home(prefix);
     let (dir, name) = match typed.rfind('/') {
         Some(at) => (typed[..=at].to_string(), typed[at + 1..].to_string()),
         None => (String::new(), typed),
@@ -336,26 +324,11 @@ fn follow_once(
     offset: &mut Option<u64>,
     misses: &mut u32,
 ) -> Stopped {
-    let stream = match dial(target) {
-        Ok(stream) => stream,
-        Err(err) => return Stopped::Retry(err),
-    };
-    let mut session = match Session::new() {
+    let session = match ssh::connect(&target.host, target.port, &target.user, &target.password) {
         Ok(session) => session,
-        Err(err) => return Stopped::Retry(err.to_string()),
+        Err(ssh::Refused::Retry(err)) => return Stopped::Retry(err),
+        Err(ssh::Refused::Fatal(err)) => return Stopped::Fatal(err),
     };
-    session.set_timeout(CONNECT_TIMEOUT.as_millis() as u32);
-    session.set_tcp_stream(stream);
-    if let Err(err) = session.handshake() {
-        return Stopped::Retry(format!("握手失败：{err}"));
-    }
-    if let Err(err) = session.userauth_password(&target.user, &target.password) {
-        // A password that was refused will be refused again: stop, do not hammer.
-        return Stopped::Fatal(format!("登录失败（{}）：{err}", target.user));
-    }
-    if !session.authenticated() {
-        return Stopped::Fatal(format!("登录被拒：{}", target.user));
-    }
     // The connect budget has done its job; from here on — opening the SFTP subsystem,
     // stat, open, every read — a slow server gets the wider session budget.
     session.set_timeout(SESSION_TIMEOUT.as_millis() as u32);
@@ -518,19 +491,6 @@ fn emit_state(app: &AppHandle, id: &str, connected: bool, note: &str) {
             note: note.to_string(),
         },
     );
-}
-
-/// Open the TCP connection, with a timeout: a host that swallows packets must not hold the
-/// thread forever.
-fn dial(target: &Target) -> Result<TcpStream, String> {
-    let where_to = format!("{}:{}", target.host, target.port);
-    let addr = (target.host.as_str(), target.port)
-        .to_socket_addrs()
-        .map_err(|e| format!("连接失败 {where_to}：{e}"))?
-        .next()
-        .ok_or_else(|| format!("连接失败 {where_to}：解析不出地址"))?;
-    TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT)
-        .map_err(|e| format!("连接失败 {where_to}：{e}"))
 }
 
 /// Size of the remote file.
@@ -703,17 +663,5 @@ mod tests {
         assert!(owns(Some(&held), &fresh));
         assert!(!owns(Some(&held), &old));
         assert!(!owns(None, &old));
-    }
-
-    /// The tilde is this side's job: nothing here goes through a shell.
-    #[test]
-    fn tilde_is_expanded() {
-        let home = std::env::var("HOME").unwrap_or_default();
-        if home.is_empty() {
-            return;
-        }
-        assert_eq!(expand("~"), home);
-        assert_eq!(expand("~/x"), format!("{home}/x"));
-        assert_eq!(expand("/var/log"), "/var/log");
     }
 }
